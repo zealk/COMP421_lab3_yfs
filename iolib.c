@@ -1,7 +1,21 @@
 #include <comp421/iolib.h>
+#include <comp421/filesystem.h>
+#include "./include/yfs.h"
 
 int Open(char* pathname){
-	return 0;
+
+	struct yfs_msg_sent* msg = malloc(sizeof(struct yfs_msg_sent));
+	msg->type = OPEN;
+	msg->pid = GetPid();
+	msg->addr1 = pathname;
+
+	if(Send(msg, -FILE_SERVER) != ERROR){
+		// TODO : need to copy from the server
+		struct yfs_msg_returned* msg_returned = (struct yfs_msg_returned* )msg;
+		return msg->data1;
+	}
+	else
+		return ERROR;
 }
 
 int Close(int fd){
