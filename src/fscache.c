@@ -16,14 +16,15 @@ CacheNode* InitCacheNode(int key, void* val) {
     return node;
 }
 
-void PutItemInCache(Cache* cache, int key, void* value) {
+void* PutItemInCache(Cache* cache, int key, void* value) {
     CacheNode* node = GetItemFromHashTable(cache->table, key);
 
     if (node != NULL) {
         node->value = value;
 
         if (node != cache->head) {
-
+            RemoveNode(cache, node);
+            SetHead(cache, node);
         }
     } else {
         node = InitCacheNode(key, value);
@@ -34,11 +35,16 @@ void PutItemInCache(Cache* cache, int key, void* value) {
             ++cache->len;
         } else {
             int remove_key = cache->tail->key;
+            void* ret = cache->tail->value;
             RemoveNode(cache, cache->tail);
             RemoveItemFromHashTable(cache->table, remove_key);
             SetHead(cache, node);
+
+            return ret;
         }
     }
+
+    return NULL;
 }
 
 void* GetItemFromCache(Cache* cache, int key) {

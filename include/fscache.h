@@ -24,7 +24,7 @@ Cache* InitCache(int capacity);
 
 CacheNode* InitCacheNode(int key, void* val);
 
-void PutItemInCache(Cache* cache, int key, void* value);
+void* PutItemInCache(Cache* cache, int key, void* value);
 
 void* GetItemFromCache(Cache* cache, int key);
 
