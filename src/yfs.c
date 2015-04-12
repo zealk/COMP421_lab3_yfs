@@ -14,12 +14,14 @@ int main(int argc, char* argv[]){
 		Exec(argv[1], argv + 1);
 
 	while(1){
-		 struct yfs_msg msg;
+		 struct yfs_msg_sent* msg = malloc(sizeof(struct yfs_msg_sent));
 		 int msg_type;
+		 int pid;
 		 
-		 Receive(&msg);
-		 msg_type = msg.type;
-		 
+		 Receive(msg);
+		 msg_type = msg->type;
+		 pid = msg->pid;
+
 		 switch(msg_type){
 		 	case OPEN :
 		 		break;
@@ -53,6 +55,8 @@ int main(int argc, char* argv[]){
 		 		printf("ERROR : Invalid message type!\n");
 		 		break;
 		 }
+
+		free(msg); 
 	}
 
 	return 0;

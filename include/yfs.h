@@ -17,11 +17,34 @@
 #define SYNC 14
 #define SHUTDOWN 15
 
-struct yfs_msg{
+#define ERROR -1
+
+struct yfs_msg_sent{
 	int type;
-	int data;
-	char pathname[16];
-	void* ptr;
+	int pid;
+	int data1;
+	int data2;
+	void* addr1;
+	void* addr2;
+};
+
+struct yfs_msg_sent_seek{
+	int type;
+	int pid;
+	int data1;
+	int data2;
+	int data3;
+	int data4;
+	void* addr2;
+};
+
+struct yfs_msg_returned{
+	int data1;
+	int data2;
+	int data3;
+	int data4;
+	void* addr1;
+	void* addr2;
 };
 
 #endif
