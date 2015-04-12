@@ -142,8 +142,13 @@ void WriteBackInode(CacheNode* inode) {
 }
 
 void WriteBackBlock(CacheNode* block) {
-    WriteSector(block->key, block->value);
+    int code = WriteSector(block->key, block->value);
     free(block);
+
+    /* Maybe it needs to do other things here */
+    if (code == ERROR) {
+        printf("Write Sector #%d failed\n", block->key);
+    }
 }
 
 int GetBlockNumFromInodeNum(int inum) {
