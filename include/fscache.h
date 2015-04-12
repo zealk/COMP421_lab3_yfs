@@ -1,8 +1,7 @@
 #ifndef __FSCACHE_H__
 #define __FSCACHE_H__
 
-#include <stdlib.h>
-#include <stdio.h>
+#include <stdbool.h>
 #include "hashtable.h"
 
 typedef struct CacheNode {
@@ -10,6 +9,7 @@ typedef struct CacheNode {
     void* value;
     struct CacheNode* prev;
     struct CacheNode* next;
+    bool dirty;
 } CacheNode;
 
 typedef struct Cache {
@@ -24,12 +24,20 @@ Cache* InitCache(int capacity);
 
 CacheNode* InitCacheNode(int key, void* val);
 
-void* PutItemInCache(Cache* cache, int key, void* value);
+CacheNode* PutItemInCache(Cache* cache, int key, void* value);
 
 void* GetItemFromCache(Cache* cache, int key);
 
 void SetHead(Cache* cache, CacheNode* node);
 
 void RemoveNode(Cache* cache, CacheNode* node);
+
+Cache* inode_cache;
+
+Cache* block_cache;
+
+void WriteBackInode(CacheNode* inode);
+
+void WriteBackBlock(CacheNode* block);
 
 #endif
