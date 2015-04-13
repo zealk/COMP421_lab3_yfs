@@ -38,8 +38,8 @@ ALL = yfs iolib.a
 #
 SRC_DIR = ./src
 
-YFS_OBJS = $(SRC_DIR)/yfs.o $(SRC_DIR)/fscache.o
-YFS_SRCS = $(SRC_DIR)/yfs.c $(SRC_DIR)/fscache.c
+YFS_OBJS = $(SRC_DIR)/yfs.o $(SRC_DIR)/fscache.o $(SRC_DIR)/hashtable.o
+YFS_SRCS = $(SRC_DIR)/yfs.c $(SRC_DIR)/fscache.c $(SRC_DIR)/hashtable.c
 
 #
 #	You must also modify the IOLIB_OBJS and IOLIB_SRCS definitions

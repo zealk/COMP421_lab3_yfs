@@ -5,7 +5,7 @@
 #include "hashtable.h"
 
 typedef struct CacheNode {
-    int key;
+    short key;
     void* value;
     struct CacheNode* prev;
     struct CacheNode* next;
@@ -22,22 +22,16 @@ typedef struct Cache {
 
 Cache* InitCache(int capacity);
 
-CacheNode* InitCacheNode(int key, void* val);
+CacheNode* InitCacheNode(short key, void* val);
 
-CacheNode* PutItemInCache(Cache* cache, int key, void* value);
+CacheNode* PutItemInCache(Cache* cache, short key, void* value);
 
-void* GetItemFromCache(Cache* cache, int key);
+void* GetItemFromCache(Cache* cache, short key);
 
 void SetHead(Cache* cache, CacheNode* node);
 
 void RemoveNode(Cache* cache, CacheNode* node);
 
-Cache* inode_cache;
-
-Cache* block_cache;
-
-void WriteBackInode(CacheNode* inode);
-
-void WriteBackBlock(CacheNode* block);
+void SetDirty(Cache* cache, short key);
 
 #endif

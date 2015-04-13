@@ -1,11 +1,11 @@
-#include <comp421/filesystem.h>
+#include "../include/yfs.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
 #include <string.h>
-#include "../include/yfs.h"
 
-int main(int argc, char* argv[]){
+int main(int argc, char* argv[]) {
+	printf("%d\n", SECTORSIZE);
 
 	if(Register(FILE_SERVER) != 0){
 		printf("ERROR : Cannot register yfs as file server!\n");
@@ -15,7 +15,13 @@ int main(int argc, char* argv[]){
 	if(Fork() == 0)
 		Exec(argv[1], argv + 1);
 
+	/* Init file system header */
 
+
+
+	/* Init cache */
+	inode_cache = InitCache(INODE_CACHESIZE);
+	block_cache = InitCache(BLOCK_CACHESIZE);
 
 	while(1){
 		 struct yfs_msg_sent* msg = malloc(sizeof(struct yfs_msg_sent));
@@ -81,184 +87,210 @@ int yfs_open(void* addr, int pid){
 		return ERROR;
 
 	// parse the file name 
-	yfs_parse_name(1, pathname, 0);
+	ParsePathName(1, pathname);
 
 	return 0;
 }
 
-int yfs_parse_name(short inum, void* pathname, int pathname_index){
-
-	// get the inode from inum
-	int block_num = 1 + inum / INODE_PER_BLOCK;
-	int inode_index = inum % INODE_PER_BLOCK;
-
-	void* sector = malloc(sizeof(SECTORSIZE));
-	if(ReadSector(block_num, sector) != 0){
-		free(sector);
+short ParsePathName(short inum, char* pathname){
+	if (pathname == NULL) {
 		return ERROR;
 	}
 
-	struct inode_block* ib = (struct inode_block* )sector;
-	struct inode curr_inode = ib->inodes[inode_index];
-
-	if(curr_inode.type == INODE_FREE || (curr_inode.type == INODE_REGULAR && ((char* )pathname)[pathname_index] != NULL)){
-		free(sector);
-		return ERROR;
+	/* Parse absolute pathname */
+	if (pathname[0] == '/') {
+		inum = 1;
 	}
 
-	/* parse the name */
-	// parse out the component and update the pathname for next resursive call
-	void* component_name;
-	int ret = helper_parse_component(pathname, component_name, &pathname_index);
-	
-	if(ret == ERROR){
-		free(sector);
-		return ERROR;
-	}
-	
-	if(ret == PARSE_END_PATH){
-		free(sector);
-		return inum;
-	}
-	
-	// else ret == PARSE_SUCCESS
-	// find the component in the inode dir_entry
-	if(curr_inode.type == INODE_DIRECTORY){
-		// right now only care about direct blocks
-		int i;
-		int count = 0;
-		bool flag_found = false;
-		void* buf = malloc(sizeof(SECTORSIZE)); // NEED TO FREE LATER
-		int total_number_dir_entry = curr_inode.size / sizeof(struct dir_entry);
+	int pathname_index = 0;
+	char* component_name = NULL;
+	pathname_index = ParseComponent(pathname, component_name, pathname_index);
 
-		for(i = 0; i < NUM_DIRECT; i ++){
-			int curr_block_num = curr_inode.direct[i];
-			if(curr_block_num == 0){
-				free(sector);
-				free(buf);
-				return ERROR;
-			}
-			if(ReadSector(curr_block_num, buf) != 0){
-				free(sector);
-				free(buf);
-				return ERROR;
-			}
-
-			struct dir_entry_block* deb = (struct dir_entry_block* )buf;
-			int j;
-			for(j = 0; (j < DIR_ENTRY_PER_BLOCK) && (count < total_number_dir_entry); j ++){
-				count ++;
-				if(strcmp(deb->dir_entries[j].name, component_name) != 0){
-					continue;
-				}
-				else{
-					int next_inum = deb->dir_entries[i].inum;
-					free(sector);
-					free(buf);
-					return yfs_parse_name(next_inum, pathname, pathname_index);
-				}
-			}
+	while (component_name != NULL) {
+		/* Check the current inode */
+		struct inode* inode = GetInodeByInum(inum);
+		if (inode->type == INODE_FREE || inode->type == INODE_REGULAR) {
+			return ERROR;
 		}
-		return ERROR; // have not found the file in the current directory
-		// TODO : CARE ABOUT INDIRECT BLOCKS
+
+		/* Get child inode number by component name */
+		if (inode->type == INODE_DIRECTORY) {
+			inum = GetInumByComponentName(inode, component_name);
+
+		/* Get inode number by symbolic link recursively */
+		} else {
+			inum = ParseSymbolicLink(inode, component_name);
+		}
+
+		/* Release component name */
+		free(component_name);
+		component_name = NULL;
+
+		/* Get next component name */
+		pathname_index = ParseComponent(pathname, component_name, pathname_index);
 	}
 
-	// TODO : SYMBOLIK LINK
-	if(curr_inode.type == INODE_SYMLINK){
-
-	}
+	return inum;
 }
 
-int helper_parse_component(void* pathname, void* component_name, int* pathname_index){
-	if(pathname == NULL)
-		return ERROR;
-
-	//int slash_start = 0;
-	//int slash_end = 0;
-	int component_start = 0;
-	int component_end = 0;
-	bool flag_start = false;
-	bool flag_slash_end = false;
-	bool flag_null_end = false;
-
-	char curr_char = ((char* )pathname)[0];
-	if(curr_char == NULL)
-		return PARSE_END_PATH;
-	int i;
-	for(i = 0;;i ++){
-		curr_char = ((char* )pathname)[i];
-		
-		if(curr_char == '\\'){
-			if(flag_start == false){
-				continue;
-			}
-			else{
-				flag_slash_end = true;
-				break;
-			}
-		}
-		else if(curr_char == NULL){
-			if(flag_start == false){
-				return PARSE_END_PATH;
-			}
-			else{
-				flag_null_end = true;
-				break;
-			}
-		}
-		else{
-			if(flag_start == false){
-				flag_start = true;
-				component_start = i;
-				continue;
-			}
-			else{
-				continue;
-			}
-		}
+int ParseComponent(char* pathname, char* component_name, int index) {
+	/* Jump continuous slash symbol */
+	while (pathname[index] == '/') {
+		++index;
 	}
 
-	// save component name
-	component_end = i; 
-	component_name = malloc(sizeof(i)); // NEED TO FREE LATER
-	memcpy(component_name, pathname, i - 1);
-	((char* )component_name)[i - 1] = NULL;
+	int component_start = index;
 
-	// update pathname
-	if(flag_null_end == true){
-		*pathname_index = *pathname_index + i;
-	}
-	else{
-		*pathname_index = *pathname_index + i + 1;
+	/* Jump valid characters */
+	while (pathname[index] != '/' && pathname[index] != '\0') {
+		++index;
 	}
 
-	return PARSE_SUCCESS;
+	int component_end = index;
+
+	/* Parse nothing */
+	if (component_start == component_end) {
+		return index;
+	}
+
+	/* Parse something */
+	component_name = (char*)calloc(component_end - component_start + 1, sizeof(char));
+	memcpy(component_name, pathname + component_start, component_end - component_start);
+
+	return index;
 }
 
+short GetInumByComponentName(struct inode* inode, char* component_name) {
+	int inum = -1;
+	int dir_entry_count = 0;
+	int total_dir_entry = inode->size / sizeof(struct dir_entry);
 
+	int i, j;
+	for (i = 0; i < NUM_DIRECT; ++i) {
+		short bnum = inode->direct[i];
+		if (bnum == 0) {
+			return inum;
+		}
 
+		void* block = GetBlockByBnum(bnum);
+		if (block == NULL) {
+			return inum;
+		}
 
+		for (j = 0; j < DIR_ENTRY_PER_BLOCK && dir_entry_count < total_dir_entry; ++j, ++dir_entry_count) {
+			struct dir_entry* entry = (struct dir_entry*)block + j;
+			char* dir_entry_name = NULL;
+			if (entry->name[DIRNAMELEN] != '\0') {
+				dir_entry_name = (char*)calloc(DIRNAMELEN + 1, sizeof(char));
+			} else {
+				dir_entry_name = (char*)calloc(sizeof(entry->name) + 1, sizeof(char));
+			}
 
+			if (strcmp(component_name, dir_entry_name) != 0) {
+				continue;
+			}
 
+			inum = entry->inum;
+			return inum;
+		}
+	}
 
+	return inum;
+}
 
+short ParseSymbolicLink(struct inode* inode, char* component_name) {
 
+}
 
+struct inode* GetInodeByInum(short inum) {
+	if (inum <= 0 || inum > header.num_inodes) {
+		return NULL;
+	}
 
+	/* Get inode from cache */
+	struct inode* inode = (struct inode*)GetItemFromCache(inode_cache, inum);
+	if (inode == NULL) {
+		/* Get inode from block */
+		void* block = GetBlockByInum(inum);
+		if (block == NULL) {
+			return NULL;
+		}
 
+		struct inode* inode = (struct inode*)calloc(1, sizeof(struct inode));
+		short offset = inum % INODE_PER_BLOCK;
+		memcpy(inode, (struct inode*)block + offset, sizeof(struct inode));
 
+		/* Cache inode */
+		CacheNode* inode_cache_node = PutItemInCache(inode_cache, inum, inode);
+		if (inode_cache_node != NULL) {
+			WriteBackInode(inode_cache_node);
+		}
+	}
 
+	return inode;
+}
 
+void* GetBlockByBnum(short bnum) {
+	if (bnum <= 0 && bnum >= header.num_blocks) {
+		return NULL;
+	}
 
+	void* block = GetItemFromCache(block_cache, bnum);
+	if (block == NULL) {
+		block = malloc(SECTORSIZE);
+		if (ReadSector(bnum, block) != 0) {
+			printf("Read Sector #%d failed\n", bnum);
+			free(block);
+			return NULL;
+		}
 
+		/* Cache block */
+		CacheNode* block_cache_node = PutItemInCache(block_cache, bnum, block);
+		if (block_cache_node != NULL) {
+			WriteBackBlock(block_cache_node);
+		}
+	}
 
+	return block;
+}
 
+void* GetBlockByInum(short inum) {
+	if (inum <= 0 || inum > header.num_inodes) {
+		return NULL;
+	}
 
+	short bnum = GetBlockNumFromInodeNum(inum);
 
+	return GetBlockByBnum(bnum);
+}
 
+void WriteBackInode(CacheNode* inode) {
+	void* block = GetBlockByInum(inode->key);
+	short bnum = GetBlockNumFromInodeNum(inode->key);
+	if (block == NULL) {
+		return;
+	}
 
+    /* Save inode in the block and set dirty bit for that block */
+    short offset = inode->key % INODE_PER_BLOCK;
+    memcpy((struct inode*)block + offset, (struct inode*)(inode->value), sizeof(struct inode));
+    SetDirty(block_cache, bnum);
 
+    free(inode->value);
+    free(inode);
+}
 
+void WriteBackBlock(CacheNode* block) {
+    int code = WriteSector(block->key, block->value);
+    /* Maybe it needs to do other things here */
+    if (code != 0) {
+        printf("Write Sector #%d failed\n", block->key);
+    }
 
+    free(block->value);
+    free(block);
+}
 
-
+short GetBlockNumFromInodeNum(short inum) {
+    return 1 + inum / INODE_PER_BLOCK;
+}
