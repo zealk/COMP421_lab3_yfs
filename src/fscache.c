@@ -136,7 +136,8 @@ void WriteBackInode(CacheNode* inode) {
     }
 
     /* Save inode in the block and set dirty bit for that block */
-    memcpy((struct inode*)block + inode->key, (struct inode*)(inode->value), sizeof(struct inode));
+    int num_inode_per_block = BLOCKSIZE / INODESIZE;
+    memcpy((struct inode*)block + inode->key % num_inode_per_block, (struct inode*)(inode->value), sizeof(struct inode));
     SetDirty(block_cache, bnum);
     free(inode);
 }
