@@ -17,8 +17,8 @@ HashTable* InitHashTable(int size) {
     return hashtable;
 }
 
-void PutItemInHashTable(HashTable* table, short key, void* value) {
-    short index = Hash(table, key);
+void PutItemInHashTable(HashTable* table, int key, void* value) {
+    int index = Hash(table, key);
     HashNode* node = table->head + index;
 
     while (true) {
@@ -45,8 +45,8 @@ void PutItemInHashTable(HashTable* table, short key, void* value) {
     }
 }
 
-void* GetItemFromHashTable(HashTable* table, short key) {
-    short index = Hash(table, key);
+void* GetItemFromHashTable(HashTable* table, int key) {
+    int index = Hash(table, key);
     HashNode* node = table->head + index;
 
     while (node != NULL) {
@@ -60,8 +60,8 @@ void* GetItemFromHashTable(HashTable* table, short key) {
     return NULL;
 }
 
-void RemoveItemFromHashTable(HashTable* table, short key) {
-    short index = Hash(table, key);
+void RemoveItemFromHashTable(HashTable* table, int key) {
+    int index = Hash(table, key);
     HashNode* node = table->head + index;
     HashNode* temp = node;
 
@@ -100,6 +100,6 @@ void DestroyHashTable(HashTable* table) {
     free(table);
 }
 
-short Hash(HashTable* table, short key) {
+int Hash(HashTable* table, int key) {
     return key % table->size;
 }

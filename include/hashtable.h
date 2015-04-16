@@ -7,7 +7,7 @@
 #define _hashtable_h
 
 typedef struct HashNode {
-    short key;
+    int key;
     void* value;
     struct HashNode* next;
 } HashNode;
@@ -20,14 +20,14 @@ typedef struct HashTable {
 
 HashTable* InitHashTable(int size);
 
-void PutItemInHashTable(HashTable* table, short key, void* value);
+void PutItemInHashTable(HashTable* table, int key, void* value);
 
-void* GetItemFromHashTable(HashTable* table, short key);
+void* GetItemFromHashTable(HashTable* table, int key);
 
-void RemoveItemFromHashTable(HashTable* table, short key);
+void RemoveItemFromHashTable(HashTable* table, int key);
 
 void DestroyHashTable(HashTable* table);
 
-short Hash(HashTable* table, short key);
+int Hash(HashTable* table, int key);
 
 #endif

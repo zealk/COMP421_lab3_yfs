@@ -1,6 +1,8 @@
 #include <comp421/iolib.h>
+#include <stdlib.h>
 #include <comp421/filesystem.h>
-#include "./include/yfs.h"
+#include <comp421/yalnix.h>
+#include "include/yfs.h"
 
 int Open(char* pathname){
 

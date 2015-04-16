@@ -9,7 +9,7 @@ Cache* InitCache(int capacity) {
     return cache;
 }
 
-CacheNode* InitCacheNode(short key, void* val) {
+CacheNode* InitCacheNode(int key, void* val) {
     CacheNode* node = calloc(1, sizeof(CacheNode));
     node->key = key;
     node->value = val;
@@ -17,7 +17,7 @@ CacheNode* InitCacheNode(short key, void* val) {
     return node;
 }
 
-CacheNode* PutItemInCache(Cache* cache, short key, void* value) {
+CacheNode* PutItemInCache(Cache* cache, int key, void* value) {
     CacheNode* node = GetItemFromHashTable(cache->table, key);
 
     if (node != NULL) {
@@ -51,7 +51,7 @@ CacheNode* PutItemInCache(Cache* cache, short key, void* value) {
     return NULL;
 }
 
-void* GetItemFromCache(Cache* cache, short key) {
+void* GetItemFromCache(Cache* cache, int key) {
     CacheNode* node = GetItemFromHashTable(cache->table, key);
     if (node == NULL) {
         return NULL;
@@ -97,7 +97,7 @@ void RemoveNode(Cache* cache, CacheNode* node) {
     }
 }
 
-void SetDirty(Cache* cache, short key) {
+void SetDirty(Cache* cache, int key) {
     CacheNode* node = GetItemFromHashTable(cache->table, key);
 
     if (node != NULL) {

@@ -20,8 +20,6 @@
 #define SYNC 14
 #define SHUTDOWN 15
 
-#define ERROR -1
-
 #define PARSE_END_PATH 1
 #define PARSE_SUCCESS 2
 
@@ -62,17 +60,30 @@ Cache* inode_cache;
 
 Cache* block_cache;
 
-int yfs_open(void* addr, int pid);
-short ParsePathName(short inum, char* pathname);
-int ParseComponent(char* pathname, char* component_name, int index);
-short ParseSymbolicLink(struct inode* inode, char* component_name);
-short GetInumByComponentName(struct inode* inode, char* component_name);
+/* True if unused, otherwise false */
+bool* free_inodes;
 
-struct inode* GetInodeByInum(short inum);
-void* GetBlockByBnum(short bnum);
-void* GetBlockByInum(short inum);
+int num_free_inodes;
+
+bool* free_blocks;
+
+int num_free_blocks;
+
+int yfs_open(void* addr, int pid);
+
+
+int InitFileSystem();
+int ParsePathName(int inum, char* pathname);
+int ParseComponent(char* pathname, char* component_name, int index);
+int ParseSymbolicLink(struct inode* inode, char* component_name, int traverse_count);
+int GetInumByComponentName(struct inode* inode, char* component_name);
+
+struct inode* GetInodeByInum(int inum);
+void* GetBlockByBnum(int bnum);
+void* GetBlockByInum(int inum);
 void WriteBackInode(CacheNode* inode);
 void WriteBackBlock(CacheNode* block);
-short GetBlockNumFromInodeNum(short inum);
+int GetBlockNumFromInodeNum(int inum);
+int GetBnumFromIndirectBlock(int indirect_bnum, int index);
 
 #endif
