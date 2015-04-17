@@ -11,6 +11,11 @@ int main(int argc, char* argv[]) {
 		return ERROR;
 	}
 
+	if (Register(FILE_SERVER) == ERROR) {
+		printf("ERROR : Cannot register yfs as file server!\n");
+		return ERROR;
+	}
+
 	if(Fork() == 0) {
 		Exec(argv[1], argv + 1);
 	}
@@ -27,7 +32,7 @@ int main(int argc, char* argv[]) {
 		 switch(msg_type){
 		 	case OPEN :
 		 	{
-		 		int fd = yfs_open(msg->addr1, pid);
+		 		int fd = YfsOpen(msg->addr1, pid);
 		 		struct yfs_msg_returned* msg_returned = (struct yfs_msg_returned* )msg;
 		 		msg_returned->data1 = fd;
 		 		Reply(msg_returned, pid);
@@ -66,20 +71,6 @@ int main(int argc, char* argv[]) {
 
 		free(msg); 
 	}
-
-	return 0;
-}
-
-int yfs_open(void* addr, int pid){
-	
-	// copy the file name from client
-	void* pathname = malloc(sizeof(MAXPATHNAMELEN));
-	
-	if(CopyFrom(pid, pathname, addr, MAXPATHNAMELEN) == ERROR)
-		return ERROR;
-
-	// parse the file name 
-	ParsePathName(1, pathname);
 
 	return 0;
 }
@@ -169,11 +160,6 @@ int InitFileSystem() {
 				}
 			}
 		}
-	}
-
-	if (Register(FILE_SERVER) == ERROR) {
-		printf("ERROR : Cannot register yfs as file server!\n");
-		return ERROR;
 	}
 
 	return 0;

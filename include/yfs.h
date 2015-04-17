@@ -69,7 +69,7 @@ bool* free_blocks;
 
 int num_free_blocks;
 
-int yfs_open(void* addr, int pid);
+int YfsOpen(void* addr, int pid);
 
 
 int InitFileSystem();
