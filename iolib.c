@@ -106,7 +106,23 @@ int Seek(int fd, int offset, int whence){
 }
 
 int Link(char* oldname, char* newname){
-	return 0;
+	if (strlen(oldname) > MAXPATHNAMELEN || strlen(newname) > MAXPATHNAMELEN) {
+        return ERROR;
+    }
+
+    yfs_msg_link* msg = (yfs_msg_link*)calloc(1, sizeof(yfs_msg_link));
+    msg->type = LINK;
+    msg->pid = GetPid();
+    msg->inum = curr_inum;
+    msg->oldname = oldname;
+    msg->newname = newname;
+
+    Send(msg, msg->pid);
+    if (msg->type == ERROR) {
+        return ERROR;
+    }
+
+    return 0;
 }
 
 int Unlink(char* pathname){

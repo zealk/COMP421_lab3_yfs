@@ -50,6 +50,25 @@ struct yfs_msg_returned{
 	void* addr2;
 };
 
+typedef struct yfs_msg_link {
+    int type;
+    int pid;
+    int inum;
+    int ret;
+    char* oldname;
+    char* newname;
+} yfs_msg_link;
+
+typedef struct yfs_msg_unlink {
+    int type;
+    int pid;
+    int inum;
+    int ret;
+    char* pathname;
+    char padding[8];
+} yfs_msg_unlink;
+
+
 struct fs_header header;
 
 Cache* inode_cache;
@@ -67,7 +86,8 @@ int num_free_blocks;
 
 int YfsOpen(struct abstract_msg* msg);
 int YfsCreate(struct abstract_msg* msg);
-
+void YfsLink(struct abstract_msg* msg);
+void YfsUnlink(struct abstract_msg* msg);
 
 int InitFileSystem();
 int ParsePathName(int inum, char* pathname);
@@ -83,10 +103,13 @@ void WriteBackBlock(CacheNode* block);
 int GetBlockNumFromInodeNum(int inum);
 int GetBnumFromIndirectBlock(int indirect_bnum, int index);
 
-struct dir_entry* FindAvailableDir_Entry(int inum, int* blocknum);
-int GetFilenameIndex(char* pathname);
+struct dir_entry* FindAvailableDirEntry(int inum, int* blocknum);
+int GetFileNameIndex(char* pathname);
+int ParsePathDir(int inum, char* pathname);
 
 int FindFreeBlock(void);
 int FindFreeInode(void);
+void SaveInode(int inum);
+void SaveBlock(int bnum);
 
 #endif

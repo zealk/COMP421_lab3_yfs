@@ -423,7 +423,7 @@ int GetBnumFromIndirectBlock(int indirect_bnum, int index) {
 }
 
 
-struct dir_entry* FindAvailableDir_Entry(int inum, int* blocknum){
+struct dir_entry* FindAvailableDirEntry(int inum, int* blocknum){
 	struct inode* inode = GetInodeByInum(inum);
 
 	int i;
@@ -511,7 +511,7 @@ struct dir_entry* FindAvailableDir_Entry(int inum, int* blocknum){
 }
 
 
-int GetFilenameIndex(char* pathname){
+int GetFileNameIndex(char* pathname){
 	int i;
     int filename_index = 0;
 
@@ -528,19 +528,47 @@ int GetFilenameIndex(char* pathname){
 }
 
 int FindFreeBlock(void){
-	return 0;
+	int i;
+    for (i = 1; i <= header.num_blocks; ++i) {
+        if (free_blocks[i]) {
+            return i;
+        }
+    }
+
+    return ERROR;
 }
 
 int FindFreeInode(void){
-	return 0;
+	int i;
+    for (i = 1; i <= header.num_inodes; ++i) {
+        if (free_inodes[i]) {
+            return i;
+        }
+    }
+
+    return ERROR;
 }
 
+void SaveInode(int inum) {
+    SetDirty(inode_cache, inum);
+}
 
+void SaveBlock(int bnum) {
+    SetDirty(block_cache, bnum);
+}
 
+int ParsePathDir(int inum, char* pathname) {
+    char dir[MAXPATHNAMELEN];
+    int filename_index = GetFileNameIndex(pathname);
+    if (filename_index == ERROR) {
+        return ERROR;
+    }
 
+    if (filename_index == 0) {
+        return inum;
+    }
 
-
-
-
-
-
+    memcpy(dir, pathname, filename_index);
+    dir[filename_index] = '\0';
+    return ParsePathName(inum, dir);
+}

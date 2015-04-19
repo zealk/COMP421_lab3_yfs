@@ -1,5 +1,6 @@
 #include "../include/yfs.h"
 #include <stdlib.h>
+#include <string.h>
 #include <comp421/yalnix.h>
 
 int YfsOpen(struct abstract_msg* msg) {
@@ -76,15 +77,69 @@ int YfsCreate(struct abstract_msg* msg) {
 
     // create another dir_entry in current inode's block
     int block_with_dir_entry;
-    struct dir_entry* new_dir_entry = FindAvailableDir_Entry(inum, &block_with_dir_entry);
+    struct dir_entry* new_dir_entry = FindAvailableDirEntry(inum, &block_with_dir_entry);
 
     // update the inum
     // update hte name
-
+    return 0;
 }
 
+void YfsLink(struct abstract_msg* msg) {
+    yfs_msg_link* recv_msg = (yfs_msg_link*)msg;
+    char oldname[MAXPATHNAMELEN];
+    char newname[MAXPATHNAMELEN];
 
+    CopyFrom(recv_msg->pid, (void*)oldname, recv_msg->oldname, MAXPATHNAMELEN);
+    CopyFrom(recv_msg->pid, (void*)newname, recv_msg->newname, MAXPATHNAMELEN);
+    
+    int old_inum = ParsePathName(recv_msg->inum, oldname);
+    struct inode* old = GetInodeByInum(old_inum);
+    int new_inum = ParsePathName(recv_msg->inum, newname);
 
+    if (old == NULL || old_inum == ERROR || new_inum != ERROR) {
+        recv_msg->ret = ERROR;
+        Reply(recv_msg, recv_msg->pid);
+    }
 
+    if (old->type == INODE_DIRECTORY) {
+        recv_msg->ret = ERROR;
+        Reply(recv_msg, recv_msg->pid);
+    }
 
+    int old_dir_inum = ParsePathDir(recv_msg->inum, oldname);
+    int new_dir_inum = ParsePathDir(recv_msg->inum, newname);
+    if (new_dir_inum == ERROR || old_dir_inum == new_dir_inum) {
+        recv_msg->ret = ERROR;
+        Reply(recv_msg, recv_msg->pid);
+    }
 
+    int bnum;
+    struct dir_entry* entry = FindAvailableDirEntry(new_dir_inum, &bnum);
+    if (entry == NULL) {
+        recv_msg->ret = ERROR;
+        Reply(recv_msg, recv_msg->pid);
+    }
+
+    int index = GetFileNameIndex(newname);
+    int name_len = strlen(newname) - index;
+    if (name_len > DIRNAMELEN) {
+        name_len = DIRNAMELEN;
+    }
+
+    memcpy(entry->name, newname + index, name_len);
+    if (name_len < DIRNAMELEN) {
+        entry->name[name_len] = '\0';
+    }
+    entry->inum = old_inum;
+    SaveBlock(bnum);
+
+    ++old->nlink;
+    SaveInode(old_inum);
+
+    recv_msg->ret = 0;
+    Reply((void*)recv_msg, recv_msg->pid);
+}
+
+void YfsUnlink(struct abstract_msg* msg) {
+    
+}
