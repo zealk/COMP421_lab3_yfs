@@ -4,6 +4,14 @@
 #include <comp421/yalnix.h>
 #include "include/yfs.h"
 
+typedef struct FileInfo {
+	bool valid;
+	int fd;
+	int curr_seek_pos;
+} FileInfo;
+
+FileInfo opened_files[MAX_OPEN_FILES];
+
 int Open(char* pathname){
 
 	struct yfs_msg_sent* msg = malloc(sizeof(struct yfs_msg_sent));
