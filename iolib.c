@@ -1,39 +1,96 @@
-#include <comp421/iolib.h>
 #include <stdlib.h>
+#include <string.h>
+#include <comp421/iolib.h>
 #include <comp421/filesystem.h>
 #include <comp421/yalnix.h>
 #include "include/yfs.h"
 
+int curr_inum = 1;
+
 typedef struct FileInfo {
 	bool valid;
-	int fd;
+	//int fd;
 	int curr_seek_pos;
+	int inum;
 } FileInfo;
 
 FileInfo opened_files[MAX_OPEN_FILES];
 
 int Open(char* pathname){
 
-	struct yfs_msg_sent* msg = malloc(sizeof(struct yfs_msg_sent));
+	if(strlen(pathname) > MAXPATHNAMELEN)
+		return ERROR;
+
+	struct yfs_msg_open* msg = malloc(sizeof(struct yfs_msg_open));
 	msg->type = OPEN;
 	msg->pid = GetPid();
-	msg->addr1 = pathname;
+	msg->curr_inum = curr_inum;
+	msg->pathname = pathname;
 
-	if(Send(msg, -FILE_SERVER) != ERROR){
-		// TODO : need to copy from the server
-		struct yfs_msg_returned* msg_returned = (struct yfs_msg_returned* )msg;
-		return msg->data1;
-	}
-	else
+	if(Send(msg, -FILE_SERVER) == ERROR)
 		return ERROR;
+
+	// struct yfs_msg_open* msg_returned = (struct yfs_msg_open* )msg;
+	int inum = msg->data1;
+
+	int fd;
+    int i;
+    for(i = 0; i < MAX_OPEN_FILES; i ++){
+    	if(opened_files[i].valid == false)
+    		continue;
+
+    	if(opened_files[i].inum == inum){
+    		fd = i;
+    		break;
+    	}
+    }
+
+    free(msg);
+
+    if(i == MAX_OPEN_FILES)
+    	return ERROR;
+    else
+    	return fd;
+
 }
 
 int Close(int fd){
+
 	return 0;
 }
 
 int Create(char* pathname){
-	return 0;
+
+	if(strlen(pathname) > MAXPATHNAMELEN)
+		return ERROR;
+	
+	struct yfs_msg_open* msg = malloc(sizeof(struct yfs_msg_open));
+	msg->type = CREATE;
+	msg->pid = GetPid();
+	msg->curr_inum = curr_inum;
+	msg->pathname = pathname;
+
+	if(Send(msg, -FILE_SERVER) == ERROR)
+		return ERROR;
+
+	int inum = msg->data1;
+    int i;
+    for(i = 0; i < MAX_OPEN_FILES; i ++){
+    	if(opened_files[i].valid == false){
+    		opened_files[i].valid = true;
+    		opened_files[i].curr_seek_pos = 0;
+    		opened_files[i].inum = inum;
+    		break;
+    	}
+    }
+    
+    if(i == MAXPATHNAMELEN){
+    	return ERROR;
+    }
+
+    free(msg);
+
+	return i;
 }
 
 int Read(int fd, void* buf, int size){

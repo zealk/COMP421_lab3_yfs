@@ -21,27 +21,26 @@ int main(int argc, char* argv[]) {
 	}
 
 	while(1){
-		 struct yfs_msg_sent* msg = malloc(sizeof(struct yfs_msg_sent));
-		 int msg_type;
-		 int pid;
 		 
+		 struct abstract_msg* msg = malloc(sizeof(struct abstract_msg));
 		 Receive(msg);
-		 msg_type = msg->type;
-		 pid = msg->pid;
+		 int msg_type = msg->type;
 
 		 switch(msg_type){
 		 	case OPEN :
 		 	{
-		 		int fd = YfsOpen(msg->addr1, pid);
-		 		struct yfs_msg_returned* msg_returned = (struct yfs_msg_returned* )msg;
-		 		msg_returned->data1 = fd;
-		 		Reply(msg_returned, pid);
+		 		if(YfsOpen(msg) == ERROR)
+		 			return ERROR;
 		 		break;
 		 	}
 		 	case CLOSE :
 		 		break;
 		 	case CREATE :
+		 	{
+		 		if(YfsCreate(msg) == ERROR)
+		 			return ERROR;
 		 		break;
+		 	}
 		 	case READ :
 		 		break;
 		 	case WRITE :
@@ -422,3 +421,126 @@ int GetBnumFromIndirectBlock(int indirect_bnum, int index) {
 
 	return ((int*)indirect_block)[index];
 }
+
+
+struct dir_entry* FindAvailableDir_Entry(int inum, int* blocknum){
+	struct inode* inode = GetInodeByInum(inum);
+
+	int i;
+	for(i = 0; i < inode->size / sizeof(struct dir_entry) + 1; i ++){
+		
+		int block_index = i / DIR_ENTRY_PER_BLOCK;
+		
+		if(block_index < NUM_DIRECT){ // within the direct blocks
+			int blocknumber;
+			
+			if(inode->direct[block_index] == 0){
+				blocknumber = FindFreeBlock();	
+				if(blocknumber == ERROR)
+					return ERROR;
+				else{
+					// update the free list
+					free_blocks[blocknumber] = false;
+					num_free_blocks --;				
+				}
+			}
+			else{
+				blocknumber = inode->direct[block_index];
+			}
+
+			struct dir_entry* block = (struct dir_entry* )GetBlockByBnum(inode->direct[blocknumber]);
+
+			int j;
+			for(j = 0; j < DIR_ENTRY_PER_BLOCK; j ++){	
+				if(block[j].inum != 0)
+					continue;
+
+				int new_inum = FindFreeInode();
+				if(new_inum == ERROR)
+					return ERROR;
+				
+				*blocknum = blocknumber;
+				return &block[j];
+			}
+		}
+		else{ // in the indirect blocks
+			int indirect_blocknumber = inode->indirect;
+
+			int* indirect_block = (struct dir_entry* )GetBlockByBnum(indirect_blocknumber);
+
+			int j;
+			for(j = 0; j < BLOCKSIZE / sizeof(int); j ++){
+				int sub_indirect_blocknumber = indirect_block[j];
+				
+				if(sub_indirect_blocknumber == 0){
+					int new_blocknum = FindFreeBlock();
+					if(new_blocknum == ERROR)
+						return ERROR;
+					else{
+						// update the free list
+						free_blocks[new_blocknum] = false;
+						num_free_blocks --;
+						// update the block[j] list
+						indirect_block[j] = new_blocknum;
+
+						*blocknum = new_blocknum;
+						return &indirect_block[j];
+					}
+				}
+
+				else{
+					struct dir_entry* block = (struct dir_entry* )GetBlockByBnum(sub_indirect_blocknumber);
+					int k;
+					for(k = 0; k < DIR_ENTRY_PER_BLOCK; k ++){	
+						if(block[k].inum != 0)
+							continue;
+
+						int new_inum = FindFreeInode();
+						if(new_inum == ERROR)
+							return ERROR;
+
+						*blocknum = sub_indirect_blocknumber;
+						return &block[j];
+					}					
+				}
+
+			}
+		}
+
+	}
+}
+
+
+int GetFilenameIndex(char* pathname){
+	int i;
+    int filename_index = 0;
+
+    if(pathname[strlen(pathname) - 1] == '/')
+    	return ERROR;
+
+    for(i = strlen(pathname) - 2; i >= 1 ; i --){	
+		if(pathname[i] == '/'){
+			filename_index = i + 1;
+			break;
+		}
+    }
+    return filename_index;
+}
+
+int FindFreeBlock(void){
+	return 0;
+}
+
+int FindFreeInode(void){
+	return 0;
+}
+
+
+
+
+
+
+
+
+
+

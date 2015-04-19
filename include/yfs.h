@@ -26,30 +26,26 @@
 #define INODE_PER_BLOCK BLOCKSIZE / INODESIZE;
 #define DIR_ENTRY_PER_BLOCK BLOCKSIZE / sizeof(struct dir_entry)
 
-struct yfs_msg_sent{
+struct abstract_msg {
+	int type;
+	char padding[28];
+};
+
+struct yfs_msg_open{
 	int type;
 	int pid;
+	int curr_inum;
 	int data1;
-	int data2;
-	void* addr1;
+	void* pathname;
 	void* addr2;
 };
 
-struct yfs_msg_sent_seek{
-	int type;
-	int pid;
-	int data1;
-	int data2;
-	int data3;
-	int data4;
-	void* addr2;
-};
 
 struct yfs_msg_returned{
+	int type;
 	int data1;
 	int data2;
 	int data3;
-	int data4;
 	void* addr1;
 	void* addr2;
 };
@@ -69,7 +65,8 @@ bool* free_blocks;
 
 int num_free_blocks;
 
-int YfsOpen(void* addr, int pid);
+int YfsOpen(struct abstract_msg* msg);
+int YfsCreate(struct abstract_msg* msg);
 
 
 int InitFileSystem();
@@ -85,5 +82,11 @@ void WriteBackInode(CacheNode* inode);
 void WriteBackBlock(CacheNode* block);
 int GetBlockNumFromInodeNum(int inum);
 int GetBnumFromIndirectBlock(int indirect_bnum, int index);
+
+struct dir_entry* FindAvailableDir_Entry(int inum, int* blocknum);
+int GetFilenameIndex(char* pathname);
+
+int FindFreeBlock(void);
+int FindFreeInode(void);
 
 #endif
