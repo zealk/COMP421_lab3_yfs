@@ -21,54 +21,58 @@ int main(int argc, char* argv[]) {
 	}
 
 	while(1){
-		 
-		 struct abstract_msg* msg = malloc(sizeof(struct abstract_msg));
-		 Receive(msg);
-		 int msg_type = msg->type;
+		 Message* msg = (Message*)calloc(1, sizeof(Message));
+		 int pid = Receive((void*)msg);
 
-		 switch(msg_type){
-		 	case OPEN :
-		 	{
-		 		if(YfsOpen(msg) == ERROR)
-		 			return ERROR;
-		 		break;
-		 	}
-		 	case CLOSE :
+		 switch(msg->type){
+		 	case OPEN: 
+		 		YfsOpen(msg, pid);
 		 		break;
 		 	case CREATE :
-		 	{
-		 		if(YfsCreate(msg) == ERROR)
-		 			return ERROR;
+		 		YfsCreate(msg, pid);
 		 		break;
-		 	}
-		 	case READ :
+		 	case READ:
+		 		YfsRead(msg, pid);
 		 		break;
-		 	case WRITE :
+		 	case WRITE:
+		 		YfsWrite(msg, pid);
 		 		break;
-		 	case SEEK :
+		 	case SEEK:
+		 		YfsSeek(msg, pid);
 		 		break;
-		 	case UNLINK :
+		 	case UNLINK:
+		 		YfsUnlink(msg, pid);
 		 		break;
-		 	case SYMLINK :
+		 	case SYMLINK:
+		 		YfsSymLink(msg, pid);
 		 		break;
-		 	case READLINK :
+		 	case READLINK:
+		 		YfsReadLink(msg, pid);
 		 		break;
-		 	case MKDIR :
+		 	case MKDIR:
+		 		YfsMkDir(msg, pid);
 		 		break;
-		 	case RMDIR :
+		 	case RMDIR:
+		 		YfsRmDir(msg, pid);
 		 		break;
-		 	case STAT :
+		 	case CHDIR:
+		 		YfsChDir(msg, pid);
 		 		break;
-		 	case SYNC :
+		 	case STAT:
+		 		YfsStat(msg, pid);
 		 		break;
-		 	case SHUTDOWN :
+		 	case SYNC:
+		 		YfsSync(msg, pid);
+		 		break;
+		 	case SHUTDOWN:
+		 		YfsShutDown(msg, pid);
 		 		break;
 		 	default :
 		 		printf("ERROR : Invalid message type!\n");
 		 		break;
 		 }
 
-		free(msg); 
+		 free(msg);
 	}
 
 	return 0;
@@ -139,12 +143,6 @@ int InitFileSystem() {
 
 			/* Check indirect block */
 			if (inode->indirect > 0) {
-				/* File size should be larger than NUM_DIRECT * BLOCKSIZE + INDIRECT BLOCKSIZE */
-				if (inode->size < (NUM_DIRECT + 1) * BLOCKSIZE) {
-					printf("Illegal use of indirect block of inode #%d\n", i);
-					return ERROR;
-				}
-
 				int indirect_block_size = inode->size - NUM_DIRECT * BLOCKSIZE;
 				j = 0;
 				while (indirect_block_size > 0) {
@@ -176,7 +174,7 @@ int ParsePathName(int inum, char* pathname){
 
 	/* Parse absolute pathname */
 	if (pathname[0] == '/') {
-		inum = 1;
+		inum = ROOTINODE;
 	}
 
 	int index = 0;
@@ -196,7 +194,7 @@ int ParsePathName(int inum, char* pathname){
 
 		/* Get inode number by symbolic link recursively */
 		} else if (inode->type == INODE_SYMLINK && pathname[index] != '\0') {
-			inum = ParseSymbolicLink(inode, component_name, 0);		
+			inum = ParseSymbolicLink(inode, 0);		
 		}
 
 		if (inum == ERROR) {
@@ -247,12 +245,15 @@ int GetInumByComponentName(struct inode* inode, char* component_name) {
 		return ERROR;
 	}
 
-	int inum = -1;
 	int total_dir_entry = inode->size / sizeof(struct dir_entry);
 
 	int i;
 	for (i = 0; i < total_dir_entry; ++i) {
-		int block_index = (i * sizeof(struct dir_entry)) / BLOCKSIZE;
+		int block_index = i * sizeof(struct dir_entry) / BLOCKSIZE;
+		if (block_index >= NUM_DIRECT && inode->indirect == 0) {
+			return ERROR;
+		}
+
 		int bnum;
 		if (block_index < NUM_DIRECT) {
 			bnum = inode->direct[block_index];
@@ -267,29 +268,16 @@ int GetInumByComponentName(struct inode* inode, char* component_name) {
 
 		struct dir_entry entry = ((struct dir_entry*)block)[i % DIR_ENTRY_PER_BLOCK];
 		if (entry.inum > 0) {
-			char* name = NULL;
-			if (entry.name[DIRNAMELEN - 1] != '\0') {
-				name = (char*)calloc(DIRNAMELEN + 1, sizeof(char));
-				memcpy(name, entry.name, DIRNAMELEN);
-			} else {
-				name = (char*)calloc(strlen(entry.name) + 1, sizeof(char));
-				memcpy(name, entry.name, strlen(entry.name));
+			if (strncmp(component_name, entry.name, DIRNAMELEN) == 0) {
+				return (int)(entry.inum);
 			}
-
-			if (strcmp(component_name, name) != 0) {
-				free(name);
-				continue;
-			}
-
-			free(name);
-			return (int)(entry.inum);
 		}
 	}
 
-	return inum;
+	return 0;
 }
 
-int ParseSymbolicLink(struct inode* inode, char* component_name, int traverse_count) {
+int ParseSymbolicLink(struct inode* inode, int traverse_count) {
 	if (inode->type != INODE_SYMLINK || traverse_count > MAXSYMLINKS) {
 		return ERROR;
 	}
@@ -310,7 +298,7 @@ int ParseSymbolicLink(struct inode* inode, char* component_name, int traverse_co
 	}
 
 	if (child->type == INODE_SYMLINK) {
-		return ParseSymbolicLink(child, NULL, ++traverse_count);
+		return ParseSymbolicLink(child, ++traverse_count);
 	}
 
 	return inum;
@@ -422,115 +410,167 @@ int GetBnumFromIndirectBlock(int indirect_bnum, int index) {
 	return ((int*)indirect_block)[index];
 }
 
+int GetBnumBySeekPosition(struct inode* inode, int seek_pos) {
+	int block_index = seek_pos / BLOCKSIZE;
 
-struct dir_entry* FindAvailableDirEntry(int inum, int* blocknum){
-	struct inode* inode = GetInodeByInum(inum);
-
-	int i;
-	for(i = 0; i < inode->size / sizeof(struct dir_entry) + 1; i ++){
-		
-		int block_index = i / DIR_ENTRY_PER_BLOCK;
-		
-		if(block_index < NUM_DIRECT){ // within the direct blocks
-			int blocknumber;
-			
-			if(inode->direct[block_index] == 0){
-				blocknumber = FindFreeBlock();	
-				if(blocknumber == ERROR)
-					return ERROR;
-				else{
-					// update the free list
-					free_blocks[blocknumber] = false;
-					num_free_blocks --;				
-				}
-			}
-			else{
-				blocknumber = inode->direct[block_index];
-			}
-
-			struct dir_entry* block = (struct dir_entry* )GetBlockByBnum(inode->direct[blocknumber]);
-
-			int j;
-			for(j = 0; j < DIR_ENTRY_PER_BLOCK; j ++){	
-				if(block[j].inum != 0)
-					continue;
-
-				int new_inum = FindFreeInode();
-				if(new_inum == ERROR)
-					return ERROR;
-				
-				*blocknum = blocknumber;
-				return &block[j];
-			}
-		}
-		else{ // in the indirect blocks
-			int indirect_blocknumber = inode->indirect;
-
-			int* indirect_block = (struct dir_entry* )GetBlockByBnum(indirect_blocknumber);
-
-			int j;
-			for(j = 0; j < BLOCKSIZE / sizeof(int); j ++){
-				int sub_indirect_blocknumber = indirect_block[j];
-				
-				if(sub_indirect_blocknumber == 0){
-					int new_blocknum = FindFreeBlock();
-					if(new_blocknum == ERROR)
-						return ERROR;
-					else{
-						// update the free list
-						free_blocks[new_blocknum] = false;
-						num_free_blocks --;
-						// update the block[j] list
-						indirect_block[j] = new_blocknum;
-
-						*blocknum = new_blocknum;
-						return &indirect_block[j];
-					}
-				}
-
-				else{
-					struct dir_entry* block = (struct dir_entry* )GetBlockByBnum(sub_indirect_blocknumber);
-					int k;
-					for(k = 0; k < DIR_ENTRY_PER_BLOCK; k ++){	
-						if(block[k].inum != 0)
-							continue;
-
-						int new_inum = FindFreeInode();
-						if(new_inum == ERROR)
-							return ERROR;
-
-						*blocknum = sub_indirect_blocknumber;
-						return &block[j];
-					}					
-				}
-
-			}
+	/* Get Bnum from direct block */
+	if (block_index < NUM_DIRECT) {
+		if (inode->direct[block_index] == 0) {
+			return ERROR;
 		}
 
+		return inode->direct[block_index];
 	}
+
+	/* Get Bnum from indirect block */
+	if (inode->indirect == 0) {
+		return ERROR;
+	}
+
+	int bnum = GetBnumFromIndirectBlock(inode->indirect, block_index - NUM_DIRECT);
+	if (bnum == 0) {
+		return ERROR;
+	}
+
+	return bnum;
 }
 
 
-int GetFileNameIndex(char* pathname){
+int CreateDirEntry(struct inode* dir_inode, int inum, char* name) {
+	if (dir_inode == NULL || dir_inode->type != INODE_DIRECTORY) {
+		return ERROR;
+	}
+
+	if (inum < 1 || inum > header.num_inodes) {
+		return ERROR;
+	}
+
+	if (name == NULL || strlen(name) > DIRNAMELEN) {
+		return ERROR;
+	}
+
+	int len = strlen(name);
+	if (DIRNAMELEN < len) {
+		len = DIRNAMELEN;
+	}
+
+	/* Find empty dir entry within the current size */
+	int i;
+	for (i = 0; i < dir_inode->size / sizeof(struct dir_entry); ++i) {
+		int block_index = i * sizeof(struct dir_entry) / BLOCKSIZE;
+		if (block_index >= NUM_DIRECT && dir_inode->indirect == 0) {
+			return ERROR;
+		}
+
+		int bnum;
+		if (block_index < NUM_DIRECT) {
+			bnum = dir_inode->direct[block_index];
+		} else {
+			bnum = GetBnumFromIndirectBlock(dir_inode->indirect, block_index - NUM_DIRECT);
+		}
+
+		void* block = GetBlockByBnum(bnum);
+		if (block == NULL) {
+			return ERROR;
+		}
+
+		struct dir_entry entry = ((struct dir_entry*)block)[i % DIR_ENTRY_PER_BLOCK];
+		if (entry.inum == 0) {
+			entry.inum = inum;
+			memcpy(entry.name, name, len);
+			SetDirty(block_cache, bnum);
+			return 0;
+		}
+	}
+
+	/* Allocate new block */
+	if (dir_inode->size % BLOCKSIZE == 0) {
+		/* Allocate new block */
+		int bnum = FindFreeBlock();
+		if (dir_inode->size == BLOCKSIZE * NUM_DIRECT) {
+			dir_inode->indirect = bnum;
+			void* indirect_block = GetBlockByBnum(bnum);
+			if (indirect_block == NULL) {
+				return ERROR;
+			}
+
+			int new_bnum = FindFreeBlock();
+			((int*)indirect_block)[0] = new_bnum;
+			/* Set dirty for indirect block */
+			SetDirty(block_cache, bnum);
+		} else {
+			/* TODO */
+			if (dir_inode->size > BLOCKSIZE * NUM_DIRECT) {
+				int index = (dir_inode->size - BLOCKSIZE * NUM_DIRECT) / BLOCKSIZE;
+				void* indirect_block = GetBlockByBnum(dir_inode->indirect);
+				if (indirect_block == NULL) {
+					return ERROR;
+				}
+
+				int new_bnum = FindFreeBlock();
+				((int*)indirect_block)[index] = new_bnum;
+			} else {
+				int j;
+				for (j = 0; j < NUM_DIRECT; ++j) {
+					if (dir_inode->direct[j] == 0) {
+						dir_inode->direct[j] = bnum;
+						break;
+					}
+				}
+			}
+		}
+	}
+
+	/* Setup a dir entry out of the current size */
+	dir_inode->size += sizeof(struct dir_entry);
+	int bnum;
+	int block_index = i * sizeof(struct dir_entry) / BLOCKSIZE;
+	if (block_index < NUM_DIRECT) {
+		bnum = dir_inode->direct[block_index];
+	} else {
+		bnum = GetBnumFromIndirectBlock(dir_inode->indirect, block_index - NUM_DIRECT);
+	}
+
+	void* block = GetBlockByBnum(bnum);
+	if (block == NULL) {
+		return ERROR;
+	}
+
+	struct dir_entry entry = ((struct dir_entry*)block)[i % DIR_ENTRY_PER_BLOCK];
+	entry.inum = inum;
+	memcpy(entry.name, name, len);
+	SetDirty(block_cache, bnum);
+	return 0;
+}
+
+/* Return the starting position of file name in path */
+int GetFileNameIndex(char* pathname) {
 	int i;
     int filename_index = 0;
 
-    if(pathname[strlen(pathname) - 1] == '/')
+    if (pathname[strlen(pathname) - 1] == '/') {
     	return ERROR;
+    }
 
-    for(i = strlen(pathname) - 2; i >= 1 ; i --){	
-		if(pathname[i] == '/'){
+    for (i = strlen(pathname) - 2; i >= 0; --i) {
+		if (pathname[i] == '/') {
 			filename_index = i + 1;
 			break;
 		}
     }
+
     return filename_index;
 }
 
-int FindFreeBlock(void){
+int FindFreeBlock(void) {
+	if (num_free_blocks == 0) {
+		return ERROR;
+	}
+
 	int i;
     for (i = 1; i <= header.num_blocks; ++i) {
         if (free_blocks[i]) {
+        	--num_free_blocks;
             return i;
         }
     }
@@ -538,10 +578,24 @@ int FindFreeBlock(void){
     return ERROR;
 }
 
-int FindFreeInode(void){
+void RecycleFreeBlock(int bnum) {
+	if (bnum < 1 || bnum > header.num_blocks) {
+		return;
+	}
+
+	free_blocks[bnum] = false;
+	++num_free_blocks;
+}
+
+int FindFreeInode(void) {
+	if (num_free_inodes == 0) {
+		return ERROR;
+	}
+
 	int i;
     for (i = 1; i <= header.num_inodes; ++i) {
         if (free_inodes[i]) {
+        	--num_free_inodes;
             return i;
         }
     }
@@ -549,12 +603,13 @@ int FindFreeInode(void){
     return ERROR;
 }
 
-void SaveInode(int inum) {
-    SetDirty(inode_cache, inum);
-}
+void RecycleFreeInode(int inum) {
+	if (inum < 1 || inum > header.num_inodes) {
+		return;
+	}
 
-void SaveBlock(int bnum) {
-    SetDirty(block_cache, bnum);
+	free_inodes[inum] = false;
+	++num_free_inodes;
 }
 
 int ParsePathDir(int inum, char* pathname) {
@@ -571,4 +626,78 @@ int ParsePathDir(int inum, char* pathname) {
     memcpy(dir, pathname, filename_index);
     dir[filename_index] = '\0';
     return ParsePathName(inum, dir);
+}
+
+
+void SyncInodeCache() {
+	CacheNode* current = inode_cache->head;
+
+	while (current != NULL) {
+		if (current->dirty) {
+			current->dirty = false;
+			void* block = GetBlockByInum(current->key);
+			int bnum = GetBlockNumFromInodeNum(current->key);
+			if (block == NULL) {
+				return;
+			}
+
+		    /* Save inode in the block and set dirty bit for that block */
+		    int offset = current->key % INODE_PER_BLOCK;
+		    memcpy((struct inode*)block + offset, (struct inode*)(current->value), sizeof(struct inode));
+		    SetDirty(block_cache, bnum);
+		}
+
+		current = current->next;
+	}
+}
+
+void SyncBlockCache() {
+	CacheNode* current = block_cache->head;
+
+	while (current != NULL) {
+		if (current->dirty) {
+			current->dirty = false;
+
+			if (WriteSector(current->key, current->value) == ERROR) {
+		        printf("Write Sector #%d failed\n", current->key);
+		    }
+		}
+
+		current = current->next;
+	}
+}
+
+int RecycleBlocksInInode(int inum) {
+	struct inode* inode = GetInodeByInum(inum);
+    if (inode == NULL) {
+        return ERROR;
+    }
+
+    int i;
+    for (i = 0; i < NUM_DIRECT; ++i) {
+        if (inode->direct[i] == 0) {
+            break;
+        }
+
+        RecycleFreeBlock(inode->direct[i]);
+        inode->direct[i] = 0;
+    }
+
+    if (inode->indirect > 0) {
+    	int j;
+    	for (j = 0; j < BLOCKSIZE / sizeof(int); ++j) {
+    		int bnum = GetBnumFromIndirectBlock(inode->indirect, j);
+    		if (bnum == 0) {
+    			break;
+    		}
+
+    		RecycleFreeBlock(bnum);
+    	}
+    	RecycleFreeBlock(inode->indirect);
+    	inode->indirect = 0;
+    }
+
+    inode->size = 0;
+    SetDirty(inode_cache, inum);
+    return 0;
 }

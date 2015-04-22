@@ -1,145 +1,379 @@
 #include "../include/yfs.h"
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 #include <comp421/yalnix.h>
+#include "../include/fscache.h"
 
-int YfsOpen(struct abstract_msg* msg) {
-    // copy the file name from client
-    struct yfs_msg_open* msg_in = (struct yfs_msg_open* )msg;
-    char* pathname = malloc(sizeof(MAXPATHNAMELEN));
-    int pid = msg_in->pid;
-    int curr_inum = msg_in->curr_inum;
-    char* addr = msg_in->pathname;
-    
-    if(CopyFrom(pid, pathname, addr, MAXPATHNAMELEN) == ERROR)
-        return ERROR;
-
-
-    // parse the file name 
-    int inum = ParsePathName(curr_inum, pathname);
-    if(inum == ERROR)
-    	return ERROR;
-   
-
-	struct yfs_msg_returned* msg_returned = (struct yfs_msg_returned* )msg;
-	msg_returned->type = OPEN;
-	msg_returned->data1 = inum;
-	Reply(msg_returned, pid);
-
-	// free the data
-	free(pathname);
-
-    return 0;
-}
-
-int YfsCreate(struct abstract_msg* msg) {
-    // copy the file name from client
-    struct yfs_msg_open* msg_in = (struct yfs_msg_open* )msg;
-    char* pathname = malloc(sizeof(MAXPATHNAMELEN));
-    int pid = msg_in->pid;
-    int curr_inum = msg_in->curr_inum;
-    char* addr = msg_in->pathname;
-    
-    if(CopyFrom(pid, pathname, addr, MAXPATHNAMELEN) == ERROR)
-        return ERROR;
-
-    // get the path before the last component in the pathname, e.g " c"
-    // will be "a/b//"
-    int i;
-    int filename_index = 0;
-
-    if(pathname[strlen(pathname) - 1] == '/')
-    	return ERROR;
-
-    for(i = strlen(pathname) - 2; i >= 1 ; i --){	
-		if(pathname[i] == '/'){
-			filename_index = i + 1;
-			break;
-		}
+void YfsOpen(Message* msg, int pid) {
+    printf("Executing YfsOpen()\n");
+    char pathname[MAXPATHNAMELEN];
+    if (CopyFrom(pid, pathname, msg->addr1, MAXPATHNAMELEN) == ERROR) {
+        printf("CopyFrom() error\n");
+        msg->type = ERROR;
+        Reply((void*)msg, pid);
+        return;
     }
-    
-    char* new_pathname = malloc(sizeof(filename_index + 1));
-    char* filename = malloc(sizeof(strlen(pathname) - filename_index));
 
-    memcpy(new_pathname, pathname, filename_index + 1);
-    memcpy(filename, pathname, strlen(pathname) - filename_index);
+    /* Parse the file name */
+    int inum = ParsePathName(msg->data1, pathname);
+    if (inum == ERROR) {
+        msg->type = ERROR;
+        Reply((void*)msg, pid);
+    	return;
+    }
+   
+    struct inode* inode = GetInodeByInum(inum);
+    if (inode == NULL) {
+        msg->type = ERROR;
+        Reply((void*)msg, pid);
+        return;
+    }
 
-    int inum = ParsePathName(curr_inum, new_pathname);
-
-    if(inum == ERROR)
-    	return ERROR;
-
-    if(num_free_inodes == 0)
-    	return ERROR;
-
-    if(num_free_blocks == 0)
-    	return ERROR;
-
-    // create another dir_entry in current inode's block
-    int block_with_dir_entry;
-    struct dir_entry* new_dir_entry = FindAvailableDirEntry(inum, &block_with_dir_entry);
-
-    // update the inum
-    // update hte name
-    return 0;
+	msg->data1 = inum;
+    msg->data2 = inode->type;
+	Reply((void*)msg, pid);
 }
 
-void YfsLink(struct abstract_msg* msg) {
-    yfs_msg_link* recv_msg = (yfs_msg_link*)msg;
+void YfsCreate(Message* msg, int pid) {
+    printf("Executing YfsCreate()\n");
+    char pathname[MAXPATHNAMELEN];
+    if (CopyFrom(pid, pathname, msg->addr1, MAXPATHNAMELEN) == ERROR) {
+        printf("CopyFrom() error\n");
+        msg->type = ERROR;
+        Reply((void*)msg, pid);
+        return;
+    }
+
+    /* Check if all directores is valid */
+    int parent_inum = ParsePathDir(msg->data1, pathname);
+    if (parent_inum == ERROR) {
+        printf("Invalid directory\n");
+        msg->type = ERROR;
+        Reply((void*)msg, pid);
+        return;
+    }
+
+    int filename_index = GetFileNameIndex(pathname);
+    char filename[strlen(pathname) - filename_index + 1];
+    memcpy(filename, pathname + filename_index, strlen(pathname) - filename_index);
+    filename[strlen(pathname) - filename_index] = '\0';
+    if (strcmp(filename, ".") == 0 || strcmp(filename, "..")) {
+        printf("Invalid file name\n");
+        msg->type = ERROR;
+        Reply((void*)msg, pid);
+        return;
+    }
+
+    struct inode* parent_inode = GetInodeByInum(parent_inum);
+    int inum = GetInumByComponentName(parent_inode, filename);
+
+    /* If file name cannot be found */
+    if (inum == 0) {
+        inum = FindFreeInode();
+        if (inum == ERROR) {
+            msg->type = ERROR;
+            Reply((void*)msg, pid);
+            return;
+        }
+
+        struct inode* inode = GetInodeByInum(inum);
+        if (inode == NULL) {
+            msg->type = ERROR;
+            Reply((void*)msg, pid);
+            return;
+        }
+
+        inode->type = INODE_REGULAR;
+        inode->nlink = 1;
+        ++inode->reuse;
+        inode->size = 0;
+        memset(inode->direct, 0, NUM_DIRECT * sizeof(int));
+        inode->indirect = 0;
+
+        if (CreateDirEntry(parent_inode, inum, filename) == ERROR) {
+            printf("Can't create new dir entry\n");
+            msg->type = ERROR;
+            Reply((void*)msg, pid);
+            return;
+        }
+
+        SetDirty(inode_cache, inum);
+    /* If file name can be found */
+    } else {
+        printf("File has existed. Set file size to 0\n");
+        if (RecycleBlocksInInode(inum) == ERROR) {
+            msg->type = ERROR;
+            Reply((void*)msg, pid);
+            return;
+        }
+    }
+
+    msg->data1 = inum;
+    struct inode* inode = GetInodeByInum(inum);
+    msg->data2 = inode->type;
+    Reply((void*)msg, pid);
+}
+
+void YfsRead(Message* msg, int pid) {
+    struct inode* inode = GetInodeByInum(msg->data1);
+    if (inode == NULL) {
+        msg->type = ERROR;
+        Reply((void*)msg, pid);
+        return;
+    }
+
+    int size = msg->data2;
+    int seek_pos = msg->data3;
+    if (seek_pos + size > inode->size) {
+        size = inode->size - seek_pos;
+    }
+
+    int len = 0;
+    char* buf = (char*)malloc(size);
+    while (size > 0) {
+        int bnum = GetBnumBySeekPosition(inode, seek_pos);
+        if (bnum == ERROR) {
+            free(buf);
+            msg->type = ERROR;
+            Reply((void*)msg, pid);
+            return;
+        }
+
+        char* block = (char*)GetBlockByBnum(bnum);
+        if (BLOCKSIZE - (seek_pos % BLOCKSIZE) < size) {
+            memcpy(block, block + seek_pos % BLOCKSIZE, BLOCKSIZE - (seek_pos % BLOCKSIZE));
+            len += BLOCKSIZE - (seek_pos % BLOCKSIZE);
+            seek_pos += BLOCKSIZE - (seek_pos % BLOCKSIZE);
+            size -= BLOCKSIZE - (seek_pos % BLOCKSIZE);
+            continue;
+        }
+
+        memcpy(block, block + seek_pos % BLOCKSIZE, size);
+        len += size;
+        seek_pos += size;
+        size = 0;
+    }
+
+    if (CopyTo(pid, msg->addr1, (void*)buf, len) == ERROR) {
+        free(buf);
+        msg->type = ERROR;
+        Reply((void*)msg, pid);
+        return;
+    }
+
+    free(buf);
+    msg->type = len;
+    Reply((void*)msg, pid);
+}
+
+void YfsWrite(Message* msg, int pid) {
+
+}
+
+void YfsSeek(Message* msg, int pid) {
+    struct inode* inode = GetInodeByInum(msg->data1);
+    if (inode == NULL) {
+        msg->type = ERROR;
+        Reply((void*)msg, pid);
+        return;
+    }
+
+    msg->type = inode->size;
+    Reply((void*)msg, pid);
+}
+
+void YfsLink(Message* msg, int pid) {
     char oldname[MAXPATHNAMELEN];
     char newname[MAXPATHNAMELEN];
 
-    CopyFrom(recv_msg->pid, (void*)oldname, recv_msg->oldname, MAXPATHNAMELEN);
-    CopyFrom(recv_msg->pid, (void*)newname, recv_msg->newname, MAXPATHNAMELEN);
+    if (CopyFrom(pid, (void*)oldname, msg->addr1, MAXPATHNAMELEN)) {
+        msg->type = ERROR;
+        Reply((void*)msg, pid);
+        return;
+    }
     
-    int old_inum = ParsePathName(recv_msg->inum, oldname);
-    struct inode* old = GetInodeByInum(old_inum);
-    int new_inum = ParsePathName(recv_msg->inum, newname);
+    if (CopyFrom(pid, (void*)newname, msg->addr2, MAXPATHNAMELEN)) {
+        msg->type = ERROR;
+        Reply((void*)msg, pid);
+        return;
+    }
+    
+    /* Get old file's directory */
+    int old_dir_inum = ParsePathDir(msg->data1, oldname);
+    if (old_dir_inum == ERROR) {
+        msg->type = ERROR;
+        Reply((void*)msg, pid);
+        return;
+    }
 
-    if (old == NULL || old_inum == ERROR || new_inum != ERROR) {
-        recv_msg->ret = ERROR;
-        Reply(recv_msg, recv_msg->pid);
+    /* Get inode of old file's directory */
+    struct inode* dir_inode = GetInodeByInum(old_dir_inum);
+    if (dir_inode == NULL) {
+        msg->type = ERROR;
+        Reply((void*)msg, pid);
+        return;
+    }
+
+    /* Get inode of old file */
+    int filename_index = GetFileNameIndex(oldname);
+    char filename[strlen(oldname) - filename_index + 1];
+    memcpy(filename, oldname + filename_index, strlen(oldname) - filename_index);
+    filename[strlen(oldname) - filename_index] = '\0';
+    int old_inum = GetInumByComponentName(dir_inode, filename);
+    struct inode* old = GetInodeByInum(old_inum);
+    int new_inum = ParsePathName(msg->data1, newname);
+
+    if (old == NULL || new_inum != ERROR) {
+        msg->type = ERROR;
+        Reply((void*)msg, pid);
+        return;
     }
 
     if (old->type == INODE_DIRECTORY) {
-        recv_msg->ret = ERROR;
-        Reply(recv_msg, recv_msg->pid);
+        msg->type = ERROR;
+        Reply((void*)msg, pid);
+        return;
     }
 
-    int old_dir_inum = ParsePathDir(recv_msg->inum, oldname);
-    int new_dir_inum = ParsePathDir(recv_msg->inum, newname);
-    if (new_dir_inum == ERROR || old_dir_inum == new_dir_inum) {
-        recv_msg->ret = ERROR;
-        Reply(recv_msg, recv_msg->pid);
+    int new_dir_inum = ParsePathDir(msg->data1, newname);
+    if (new_dir_inum == ERROR) {
+        msg->type = ERROR;
+        Reply((void*)msg, pid);
+        return;
     }
 
-    int bnum;
-    struct dir_entry* entry = FindAvailableDirEntry(new_dir_inum, &bnum);
-    if (entry == NULL) {
-        recv_msg->ret = ERROR;
-        Reply(recv_msg, recv_msg->pid);
+    struct inode* new_dir_inode = GetInodeByInum(new_dir_inum);
+    if (new_dir_inode == NULL) {
+        msg->type = ERROR;
+        Reply((void*)msg, pid);
+        return;
     }
 
-    int index = GetFileNameIndex(newname);
-    int name_len = strlen(newname) - index;
-    if (name_len > DIRNAMELEN) {
-        name_len = DIRNAMELEN;
+    if (CreateDirEntry(new_dir_inode, old, filename) == ERROR) {
+        msg->type = ERROR;
+        Reply((void*)msg, pid);
+        return;
     }
-
-    memcpy(entry->name, newname + index, name_len);
-    if (name_len < DIRNAMELEN) {
-        entry->name[name_len] = '\0';
-    }
-    entry->inum = old_inum;
-    SaveBlock(bnum);
 
     ++old->nlink;
-    SaveInode(old_inum);
-
-    recv_msg->ret = 0;
-    Reply((void*)recv_msg, recv_msg->pid);
+    SetDirty(inode_cache, old_inum);
+    Reply((void*)msg, pid);
 }
 
-void YfsUnlink(struct abstract_msg* msg) {
+void YfsUnlink(Message* msg, int pid) {
     
+}
+
+void YfsSymLink(Message* msg, int pid) {
+
+}
+
+void YfsReadLink(Message* msg, int pid) {
+
+}
+
+void YfsMkDir(Message* msg, int pid) {
+
+}
+
+void YfsRmDir(Message* msg, int pid) {
+
+}
+
+void YfsChDir(Message* msg, int pid) {
+    printf("Executing YfsChDir\n");
+    char pathname[MAXPATHNAMELEN];
+    if (CopyFrom(pid, (void*)pathname, (void*)msg->addr1, MAXPATHNAMELEN)) {
+        printf("CopyFrom() error\n");
+        msg->type = ERROR;
+        Reply((void*)msg, pid);
+        return;
+    }
+
+    int inum = ParsePathName(msg->data1, pathname);
+    if (inum == ERROR) {
+        printf("ParsePathName() error\n");
+        msg->type = ERROR;
+        Reply((void*)msg, pid);
+        return;
+    }
+
+    struct inode* inode = GetInodeByInum(inum);
+    if (inode == NULL) {
+        msg->type = ERROR;
+        Reply((void*)msg, pid);
+        return;
+    }
+
+    if (inode->type != INODE_DIRECTORY) {
+        printf("The path %s is not a directory\n", pathname);
+        msg->type = ERROR;
+        Reply((void*)msg, pid);
+        return;
+    }
+
+    msg->data1 = inum;
+    Reply((void*)msg, pid);
+}
+
+void YfsStat(Message* msg, int pid) {
+    char pathname[MAXPATHNAMELEN];
+    if (CopyFrom(pid, (void*)pathname, (void*)(msg->addr1), MAXPATHNAMELEN) == ERROR) {
+        msg->type = ERROR;
+        Reply((void*)msg, pid);
+        return;
+    }
+
+    int dir_inum = ParsePathDir(msg->data1, pathname);
+    if (dir_inum == ERROR) {
+        msg->type = ERROR;
+        Reply((void*)msg, pid);
+        return;
+    }
+
+    struct inode* dir_inode = GetInodeByInum(dir_inum);
+    if (dir_inode == NULL) {
+        msg->type = ERROR;
+        Reply((void*)msg, pid);
+        return;
+    }
+
+    int filename_index = GetFileNameIndex(pathname);
+    char filename[strlen(pathname) - filename_index + 1];
+    memcpy(filename, pathname + filename_index, strlen(pathname) - filename_index);
+    filename[strlen(pathname) - filename_index] = '\0';
+    int inum = GetInumByComponentName(dir_inode, filename);
+    if (inum == ERROR || inum == 0) {
+        msg->type = ERROR;
+        Reply((void*)msg, pid);
+        return;
+    }
+
+    struct inode* inode = GetInodeByInum(inum);
+    if (inode == NULL) {
+        msg->type = ERROR;
+        Reply((void*)msg, pid);
+        return;
+    }
+
+    msg->type = inum;
+    msg->data1 = inode->type;
+    msg->data2 = inode->size;
+    msg->data3 = inode->nlink;
+    Reply((void*)msg, pid);
+}
+
+void YfsSync(Message* msg, int pid) {
+    SyncInodeCache();
+    SyncBlockCache();
+    Reply(msg, pid);
+}
+
+void YfsShutDown(Message* msg, int pid) {
+    SyncInodeCache();
+    SyncBlockCache();
+    Reply(msg, pid);
+    printf("Yalnix File System is shuting down ...\n");
+    Exit(0);
 }

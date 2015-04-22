@@ -5,69 +5,32 @@
 #include "fscache.h"
 
 #define OPEN 1
-#define CLOSE 2
-#define CREATE 3
-#define READ 4
-#define WRITE 5
-#define SEEK 6
-#define LINK 7
-#define UNLINK 8
-#define SYMLINK 9
-#define READLINK 10
-#define MKDIR 11
-#define RMDIR 12
+#define CREATE 2
+#define READ 3
+#define WRITE 4
+#define SEEK 5
+#define LINK 6
+#define UNLINK 7
+#define SYMLINK 8
+#define READLINK 9
+#define MKDIR 10
+#define RMDIR 11
+#define CHDIR 12
 #define STAT 13
 #define SYNC 14
 #define SHUTDOWN 15
 
-#define PARSE_END_PATH 1
-#define PARSE_SUCCESS 2
-
 #define INODE_PER_BLOCK BLOCKSIZE / INODESIZE;
 #define DIR_ENTRY_PER_BLOCK BLOCKSIZE / sizeof(struct dir_entry)
 
-struct abstract_msg {
+typedef struct message {
 	int type;
-	char padding[28];
-};
-
-struct yfs_msg_open{
-	int type;
-	int pid;
-	int curr_inum;
-	int data1;
-	void* pathname;
-	void* addr2;
-};
-
-
-struct yfs_msg_returned{
-	int type;
-	int data1;
+    int data1;
 	int data2;
-	int data3;
+    int data3;
 	void* addr1;
 	void* addr2;
-};
-
-typedef struct yfs_msg_link {
-    int type;
-    int pid;
-    int inum;
-    int ret;
-    char* oldname;
-    char* newname;
-} yfs_msg_link;
-
-typedef struct yfs_msg_unlink {
-    int type;
-    int pid;
-    int inum;
-    int ret;
-    char* pathname;
-    char padding[8];
-} yfs_msg_unlink;
-
+} Message;
 
 struct fs_header header;
 
@@ -84,15 +47,26 @@ bool* free_blocks;
 
 int num_free_blocks;
 
-int YfsOpen(struct abstract_msg* msg);
-int YfsCreate(struct abstract_msg* msg);
-void YfsLink(struct abstract_msg* msg);
-void YfsUnlink(struct abstract_msg* msg);
+void YfsOpen(Message* msg, int pid);
+void YfsCreate(Message* msg, int pid);
+void YfsRead(Message* msg, int pid);
+void YfsWrite(Message* msg, int pid);
+void YfsSeek(Message* msg, int pid);
+void YfsLink(Message* msg, int pid);
+void YfsUnlink(Message* msg, int pid);
+void YfsSymLink(Message* msg, int pid);
+void YfsReadLink(Message* msg, int pid);
+void YfsMkDir(Message* msg, int pid);
+void YfsRmDir(Message* msg, int pid);
+void YfsChDir(Message* msg, int pid);
+void YfsStat(Message* msg, int pid);
+void YfsSync(Message* msg, int pid);
+void YfsShutDown(Message* msg, int pid);
 
 int InitFileSystem();
 int ParsePathName(int inum, char* pathname);
 int ParseComponent(char* pathname, char* component_name, int index);
-int ParseSymbolicLink(struct inode* inode, char* component_name, int traverse_count);
+int ParseSymbolicLink(struct inode* inode, int traverse_count);
 int GetInumByComponentName(struct inode* inode, char* component_name);
 
 struct inode* GetInodeByInum(int inum);
@@ -102,14 +76,19 @@ void WriteBackInode(CacheNode* inode);
 void WriteBackBlock(CacheNode* block);
 int GetBlockNumFromInodeNum(int inum);
 int GetBnumFromIndirectBlock(int indirect_bnum, int index);
+int GetBnumBySeekPosition(struct inode* inode, int seek_pos);
 
-struct dir_entry* FindAvailableDirEntry(int inum, int* blocknum);
+int CreateDirEntry(struct inode* dir_inode, int inum, char* name);
 int GetFileNameIndex(char* pathname);
 int ParsePathDir(int inum, char* pathname);
 
 int FindFreeBlock(void);
+void RecycleFreeBlock(int bnum);
 int FindFreeInode(void);
-void SaveInode(int inum);
-void SaveBlock(int bnum);
+void RecycleFreeInode(int inum);
+void SyncInodeCache();
+void SyncBlockCache();
+
+int RecycleBlocksInInode(int inum);
 
 #endif
