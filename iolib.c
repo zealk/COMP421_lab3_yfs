@@ -7,11 +7,10 @@
 
 int curr_inum = 1;
 
-typedef struct FileInfo {
+typedef struct file_info {
 	bool valid;
 	int curr_seek_pos;
 	int inum;
-    int type;
 } FileInfo;
 
 FileInfo opened_files[MAX_OPEN_FILES];
@@ -47,7 +46,6 @@ int Open(char* pathname){
     opened_files[fd].valid = true;
     opened_files[fd].curr_seek_pos = 0;
     opened_files[fd].inum = msg->data1;
-    opened_files[fd].type = msg->data2;
     
     free(msg);    
     return fd;
@@ -87,7 +85,6 @@ int Create(char* pathname){
     		opened_files[i].valid = true;
     		opened_files[i].curr_seek_pos = 0;
     		opened_files[i].inum = msg->data1;
-            opened_files[i].type = msg->data2;
     		break;
     	}
     }

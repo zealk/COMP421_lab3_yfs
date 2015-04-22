@@ -31,7 +31,6 @@ void YfsOpen(Message* msg, int pid) {
     }
 
 	msg->data1 = inum;
-    msg->data2 = inode->type;
 	Reply((void*)msg, pid);
 }
 
@@ -110,8 +109,6 @@ void YfsCreate(Message* msg, int pid) {
     }
 
     msg->data1 = inum;
-    struct inode* inode = GetInodeByInum(inum);
-    msg->data2 = inode->type;
     Reply((void*)msg, pid);
 }
 
@@ -250,7 +247,7 @@ void YfsLink(Message* msg, int pid) {
         return;
     }
 
-    if (CreateDirEntry(new_dir_inode, old, filename) == ERROR) {
+    if (CreateDirEntry(new_dir_inode, old_inum, filename) == ERROR) {
         msg->type = ERROR;
         Reply((void*)msg, pid);
         return;
