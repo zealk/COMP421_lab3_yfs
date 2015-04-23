@@ -113,6 +113,7 @@ void YfsCreate(Message* msg, int pid) {
 }
 
 void YfsRead(Message* msg, int pid) {
+    printf("Executing YfsRead()\n");
     struct inode* inode = GetInodeByInum(msg->data1);
     if (inode == NULL) {
         msg->type = ERROR;
@@ -166,6 +167,7 @@ void YfsRead(Message* msg, int pid) {
 }
 
 void YfsWrite(Message* msg, int pid) {
+    printf("Executing YfsWrite()\n");
     struct inode* inode = GetInodeByInum(msg->data1);
     if (inode == NULL) {
         msg->type = ERROR;
@@ -193,7 +195,7 @@ void YfsWrite(Message* msg, int pid) {
     while (size > 0) {
         int bnum = GetBnumBySeekPosition(inode, seek_pos);
         if (bnum == ERROR) {
-            bnum = AllocateBlockInInode(inode);
+            bnum = AllocateBlockInInode(inode, msg->data1);
             if (bnum == ERROR) {
                 msg->type = ERROR;
                 Reply((void*)msg, pid);
@@ -230,6 +232,9 @@ void YfsWrite(Message* msg, int pid) {
 }
 
 void YfsSeek(Message* msg, int pid) {
+    printf("Executing YfsSeek()\n");
+
+    /* Get newest file size */
     struct inode* inode = GetInodeByInum(msg->data1);
     if (inode == NULL) {
         msg->type = ERROR;
@@ -242,6 +247,7 @@ void YfsSeek(Message* msg, int pid) {
 }
 
 void YfsLink(Message* msg, int pid) {
+    printf("Executing YfsLink()\n");
     char oldname[MAXPATHNAMELEN];
     char newname[MAXPATHNAMELEN];
 
@@ -320,8 +326,9 @@ void YfsLink(Message* msg, int pid) {
 }
 
 void YfsUnlink(Message* msg, int pid) {
+    printf("Executing YfsUnlink()\n");
     char pathname[MAXPATHNAMELEN];
-    if (CopyFrom(pid, (void*)oldname, msg->addr1, MAXPATHNAMELEN) == ERROR) {
+    if (CopyFrom(pid, (void*)pathname, msg->addr1, MAXPATHNAMELEN) == ERROR) {
         msg->type = ERROR;
         Reply((void*)msg, pid);
         return;
@@ -329,23 +336,26 @@ void YfsUnlink(Message* msg, int pid) {
 }
 
 void YfsSymLink(Message* msg, int pid) {
+    printf("Executing YfsSymLink()\n");
 
 }
 
 void YfsReadLink(Message* msg, int pid) {
+    printf("Executing YfsReadLink()\n");
 
 }
 
 void YfsMkDir(Message* msg, int pid) {
-
+    printf("Executing YfsMkDir()\n");
 }
 
 void YfsRmDir(Message* msg, int pid) {
+    printf("Executing YfsRmDir()\n");
 
 }
 
 void YfsChDir(Message* msg, int pid) {
-    printf("Executing YfsChDir\n");
+    printf("Executing YfsChDir()\n");
     char pathname[MAXPATHNAMELEN];
     if (CopyFrom(pid, (void*)pathname, msg->addr1, MAXPATHNAMELEN) == ERROR) {
         printf("CopyFrom() error\n");
@@ -381,6 +391,7 @@ void YfsChDir(Message* msg, int pid) {
 }
 
 void YfsStat(Message* msg, int pid) {
+    printf("Executing YfsStat()\n");
     char pathname[MAXPATHNAMELEN];
     if (CopyFrom(pid, (void*)pathname, msg->addr1, MAXPATHNAMELEN) == ERROR) {
         msg->type = ERROR;
@@ -428,12 +439,14 @@ void YfsStat(Message* msg, int pid) {
 }
 
 void YfsSync(Message* msg, int pid) {
+    printf("Executing YfsSync()\n");
     SyncInodeCache();
     SyncBlockCache();
     Reply(msg, pid);
 }
 
 void YfsShutDown(Message* msg, int pid) {
+    printf("Executing YfsShutDown()\n");
     SyncInodeCache();
     SyncBlockCache();
     Reply(msg, pid);
