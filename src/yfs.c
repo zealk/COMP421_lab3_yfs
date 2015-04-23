@@ -435,8 +435,60 @@ int GetBnumBySeekPosition(struct inode* inode, int seek_pos) {
 	return bnum;
 }
 
+int AllocateBlockInInode(struct inode* inode, int inum) {
+	int i;
+	for (i = 0; i < NUM_DIRECT; ++i) {
+		if (inode->direct[i] == 0) {
+			int bnum = FindFreeBlock();
+			if (bnum == ERROR) {
+				return ERROR;
+			}
 
-int CreateDirEntry(struct inode* dir_inode, int inum, char* name) {
+			inode->direct[i] = bnum;
+			SetDirty(inode_cache, inum);
+			return 0;
+		}
+	}
+
+	if (inode->indirect == 0) {
+		int bnum = FindFreeBlock();
+		if (bnum == ERROR) {
+			return ERROR;
+		}
+
+		void* block = GetBlockByBnum(bnum);
+		if (block == NULL) {
+			return ERROR;
+		}
+
+		memset(block, 0, BLOCKSIZE);
+		inode->indirect = bnum;
+		SetDirty(inode_cache, inum);
+	}
+
+	void* indirect_block = GetBlockByBnum(inode->indirect);
+	if (indirect_block == NULL) {
+		return ERROR;
+	}
+
+	for (i = 0; i < BLOCKSIZE / sizeof(int); ++i) {
+		if (((int*)indirect_block)[i] == 0) {
+			int bnum = FindFreeBlock();
+			if (bnum == ERROR) {
+				return ERROR;
+			}
+
+			((int*)indirect_block)[i] = bnum;
+			SetDirty(block_cache, inode->indirect);
+			return 0;
+		}
+	}
+
+	return ERROR;
+}
+
+
+int CreateDirEntry(struct inode* dir_inode, int dir_inum, int inum, char* name) {
 	if (dir_inode == NULL || dir_inode->type != INODE_DIRECTORY) {
 		return ERROR;
 	}
@@ -485,40 +537,7 @@ int CreateDirEntry(struct inode* dir_inode, int inum, char* name) {
 
 	/* Allocate new block */
 	if (dir_inode->size % BLOCKSIZE == 0) {
-		/* Allocate new block */
-		int bnum = FindFreeBlock();
-		if (dir_inode->size == BLOCKSIZE * NUM_DIRECT) {
-			dir_inode->indirect = bnum;
-			void* indirect_block = GetBlockByBnum(bnum);
-			if (indirect_block == NULL) {
-				return ERROR;
-			}
-
-			int new_bnum = FindFreeBlock();
-			((int*)indirect_block)[0] = new_bnum;
-			/* Set dirty for indirect block */
-			SetDirty(block_cache, bnum);
-		} else {
-			/* TODO */
-			if (dir_inode->size > BLOCKSIZE * NUM_DIRECT) {
-				int index = (dir_inode->size - BLOCKSIZE * NUM_DIRECT) / BLOCKSIZE;
-				void* indirect_block = GetBlockByBnum(dir_inode->indirect);
-				if (indirect_block == NULL) {
-					return ERROR;
-				}
-
-				int new_bnum = FindFreeBlock();
-				((int*)indirect_block)[index] = new_bnum;
-			} else {
-				int j;
-				for (j = 0; j < NUM_DIRECT; ++j) {
-					if (dir_inode->direct[j] == 0) {
-						dir_inode->direct[j] = bnum;
-						break;
-					}
-				}
-			}
-		}
+		AllocateBlockInInode(dir_inode, dir_inum);
 	}
 
 	/* Setup a dir entry out of the current size */

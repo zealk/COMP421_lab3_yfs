@@ -133,10 +133,15 @@ int Write(int fd, void* buf, int size){
         return ERROR;
     }
 
+    if (!opened_files[fd].valid) {
+        return ERROR;
+    }
+
 	Message* msg = (Message*)calloc(1, sizeof(Message));
     msg->type = WRITE;
-    msg->data1 = fd;
+    msg->data1 = opened_files[fd].inum;
     msg->data2 = size;
+    msg->data3 = opened_files[fd].curr_seek_pos;
     msg->addr1 = buf;
 
     if (Send(msg, -FILE_SERVER) == ERROR) {
