@@ -487,7 +487,40 @@ int AllocateBlockInInode(struct inode* inode, int inum) {
 	return ERROR;
 }
 
-int DeleteDirEntry(struct inode* dir_inode, int dir_inum, int inum, char* name) {
+int CountDirEntry(struct inode* dir_inode, int dir_inum) {
+	if (dir_inode == NULL || dir_inode->type != INODE_DIRECTORY) {
+		return ERROR;
+	}
+
+	int count = 0;
+	int i;
+	for (i = 0; i < dir_inode->size / sizeof(struct dir_entry); ++i) {
+		int block_index = i * sizeof(struct dir_entry) / BLOCKSIZE;
+		if (block_index >= NUM_DIRECT && dir_inode->indirect == 0) {
+			return ERROR;
+		}
+
+		int bnum;
+		if (block_index < NUM_DIRECT) {
+			bnum = dir_inode->direct[block_index];
+		} else {
+			bnum = GetBnumFromIndirectBlock(dir_inode->indirect, block_index - NUM_DIRECT);
+		}
+
+		void* block = GetBlockByBnum(bnum);
+		if (block == NULL) {
+			return ERROR;
+		}
+
+		struct dir_entry entry = ((struct dir_entry*)block)[i % DIR_ENTRY_PER_BLOCK];
+		if (entry.inum != 0) {
+			count++;
+		}
+	}
+	return count;
+}
+
+int DeleteDirEntry(struct inode* dir_inode, int dir_inum, int inum) {
 	if (dir_inode == NULL || dir_inode->type != INODE_DIRECTORY) {
 		return ERROR;
 	}
@@ -495,16 +528,6 @@ int DeleteDirEntry(struct inode* dir_inode, int dir_inum, int inum, char* name) 
 	if (inum < 1 || inum > header.num_inodes) {
 		return ERROR;
 	}
-
-	if (name == NULL || strlen(name) > DIRNAMELEN) {
-		return ERROR;
-	}
-
-	int len = strlen(name);
-	if (DIRNAMELEN < len) {
-		len = DIRNAMELEN;
-	}
-
 
 	int i;
 	for (i = 0; i < dir_inode->size / sizeof(struct dir_entry); ++i) {
