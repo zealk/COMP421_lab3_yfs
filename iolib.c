@@ -170,32 +170,18 @@ int Seek(int fd, int offset, int whence){
     Message* msg = (Message*)calloc(1, sizeof(Message));
     msg->type = SEEK;
     msg->data1 = opened_files[fd].inum;
+    msg->data2 = offset;
+    msg->data3 = whence;
+    msg->addr1 = &(opened_files[fd].curr_seek_pos);
 
     if (Send(msg, -FILE_SERVER) == ERROR) {
         free(msg);
         return ERROR;
     }
 
-    int size = msg->type;
+    int seek_pos = msg->type;
     free(msg);
-    if (size == ERROR) {
-        return ERROR;
-    }
-
-    switch (whence) {
-        case SEEK_SET:
-            whence = 0;
-            break;
-        case SEEK_CUR:
-            whence = opened_files[fd].curr_seek_pos;
-            break;
-        case SEEK_END:
-            whence = size;
-            break;
-    }
-
-    int seek_pos = whence + offset;
-    if (seek_pos < 0 || seek_pos > size) {
+    if (seek_pos == ERROR) {
         return ERROR;
     }
     

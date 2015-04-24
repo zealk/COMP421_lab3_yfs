@@ -241,8 +241,35 @@ void YfsSeek(Message* msg, int pid) {
         Reply((void*)msg, pid);
         return;
     }
+    
+    int* pos_addr = NULL;
+    if (CopyFrom(pid, (void*)(pos_addr), msg->addr1, sizeof(int)) == ERROR) {
+        msg->type = ERROR;
+        Reply((void*)msg, pid);
+        return;
+    }
 
-    msg->type = inode->size;
+    int whence = msg->data3;
+    switch (whence) {
+        case SEEK_SET:
+            whence = 0;
+            break;
+        case SEEK_CUR:
+            whence = *pos_addr;
+            break;
+        case SEEK_END:
+            whence = inode->size;
+            break;
+    }
+
+    int seek_pos = whence + msg->data2;
+    if (seek_pos < 0 || seek_pos > inode->size) {
+        msg->type = ERROR;
+        Reply((void*)msg, pid);
+        return;
+    }
+
+    msg->type = seek_pos;
     Reply((void*)msg, pid);
 }
 
