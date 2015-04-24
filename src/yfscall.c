@@ -57,7 +57,7 @@ void YfsCreate(Message* msg, int pid) {
     char filename[strlen(pathname) - filename_index + 1];
     memcpy(filename, pathname + filename_index, strlen(pathname) - filename_index);
     filename[strlen(pathname) - filename_index] = '\0';
-    if (strcmp(filename, ".") == 0 || strcmp(filename, "..")) {
+    if (strcmp(filename, ".") == 0 || strcmp(filename, "..") == 0) {
         printf("Invalid file name\n");
         msg->type = ERROR;
         Reply((void*)msg, pid);
@@ -402,7 +402,80 @@ void YfsUnlink(Message* msg, int pid) {
 
 void YfsSymLink(Message* msg, int pid) {
     printf("Executing YfsSymLink()\n");
+    char oldname[MAXPATHNAMELEN];
+    char newname[MAXPATHNAMELEN];
 
+    if (CopyFrom(pid, (void*)oldname, msg->addr1, MAXPATHNAMELEN) == ERROR)
+        goto ERR;   
+    if (CopyFrom(pid, (void*)newname, msg->addr2, MAXPATHNAMELEN) == ERROR)
+        goto ERR;
+    /* Null pathname */
+    if (oldname[0] == '\0')
+        goto ERR;
+    /* New name existed */
+    int new_inum = ParsePathName(msg->data1, newname);
+    if (new_inum != Error)
+        goto ERR;
+    /* Create new symbol link file */
+    /* Check if all directores is valid */
+    int dir_inum = ParsePathDir(msg->data1, newname);
+    if (dir_inum == ERROR)
+        goto ERR;
+    /* Check if newname is valid */
+    int filename_index = GetFileNameIndex(newname);
+    char filename[strlen(newname) - filename_index + 1];
+    memcpy(filename, newname + filename_index, strlen(newname) - filename_index);
+    filename[strlen(newname) - filename_index] = '\0';
+    if (strcmp(filename, ".") == 0 || strcmp(filename, "..") == 0)
+        goto ERR;
+    /* Check if newname exited again */
+    inum = GetInumByComponentName(dir_inode, filename);
+    if (inum)
+        goto ERR;
+
+    inum = FindFreeInode();
+    if (inum == ERROR)
+        goto ERR;
+
+    struct new_inode* inode = GetInodeByInum(inum);
+    if (inode == NULL)
+            goto ERR;
+
+    /* Initialize new inode of symbolic link */
+    inode->type = INODE_SYMLINK;
+    inode->nlink = 1;
+    ++inode->reuse;
+    inode->size = 0;
+    memset(inode->direct, 0, NUM_DIRECT * sizeof(int));
+    inode->indirect = 0;
+
+    /* Create directory entry for new inode */
+    if (CreateDirEntry(dir_inode, dir_inum, inum, filename) == ERROR)
+        goto ERR;
+    
+    /* Allocate a new block to store oldname */
+    int bnum = AllocateBlockInInode(inode,inum);
+    if (bnum == ERROR)
+        goto ERR;
+    void* block = GetBlockByBnum(bnum);
+    if (block == NULL)
+        goto ERR;
+    /* Path name should be stored in one block */
+    if (BLOCKSIZE < MAXPATHNAMELEN)
+        goto ERR;
+    
+    memcpy(block, oldname, sizeof(oldname));
+
+    SetDirty(block_cache,bnum);
+    SetDirty(inode_cache,inum);
+
+    Reply((void*)msg, pid);
+    return;
+
+    ERR:
+        msg->type = ERROR;
+        Reply((void*)msg, pid);
+        return;
 }
 
 void YfsReadLink(Message* msg, int pid) {
