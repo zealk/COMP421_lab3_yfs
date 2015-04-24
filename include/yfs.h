@@ -79,6 +79,7 @@ int GetBnumFromIndirectBlock(int indirect_bnum, int index);
 int GetBnumBySeekPosition(struct inode* inode, int seek_pos);
 int AllocateBlockInInode(struct inode* inode, int inum);
 
+int DeleteDirEntry(struct inode* dir_inode, int dir_inum, int inum, char* name);
 int CreateDirEntry(struct inode* dir_inode, int dir_inum, int inum, char* name);
 int GetFileNameIndex(char* pathname);
 int ParsePathDir(int inum, char* pathname);

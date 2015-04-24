@@ -355,11 +355,49 @@ void YfsLink(Message* msg, int pid) {
 void YfsUnlink(Message* msg, int pid) {
     printf("Executing YfsUnlink()\n");
     char pathname[MAXPATHNAMELEN];
-    if (CopyFrom(pid, (void*)pathname, msg->addr1, MAXPATHNAMELEN) == ERROR) {
+    if (CopyFrom(pid, (void*)pathname, msg->addr1, MAXPATHNAMELEN) == ERROR)
+        goto ERR;
+
+    /* Get pathname's directory */
+    int file_dir_inum = ParsePathDir(msg->data1, pathname);
+    if (file_dir_inum == ERROR)
+        goto ERR;
+
+    /* Get inode of pathname's directory */
+    struct inode* dir_inode = GetInodeByInum(file_dir_inum);
+    if (dir_inode == NULL)
+        goto ERR;
+
+    /* Get filename from pathname */
+    int filename_index = GetFileNameIndex(pathname);
+    char filename[strlen(pathname) - filename_index + 1];
+    memcpy(filename, pathname + filename_index, strlen(pathname) - filename_index);
+    filename[strlen(pathname) - filename_index] = '\0';
+
+    /* Get file inode */
+    int file_inum = GetInumByComponentName(dir_inode, filename);
+    struct inode* file_inode = GetInodeByInum(file_inum);
+
+    if (file_inode == NULL)
+        goto ERR;
+    if (file_inode->type == INODE_DIRECTORY)
+        goto ERR;
+    if (DeleteDirEntry(dir_inode, file_dir_inum, file_inum, filename) == ERROR)
+        goto ERR;
+
+    if (!(--file_inode->nlink)) {
+        RecycleBlocksInInode(file_inum);
+        RecycleFreeInode(file_inum);
+    }
+
+    SetDirty(inode_cache, file_inum);
+    Reply((void*)msg, pid);
+    return;
+
+    ERR:
         msg->type = ERROR;
         Reply((void*)msg, pid);
         return;
-    }
 }
 
 void YfsSymLink(Message* msg, int pid) {
